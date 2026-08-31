@@ -18,3 +18,6 @@ option(SUPERDEX_PHYSICS_BUILD_BENCHMARKS "Build superdex_physics benchmark appli
 option(SUPERDEX_PHYSICS_BUILD_TESTS "Build superdex_physics unit test applications" OFF)
 
 option(SUPERDEX_PHYSICS_BUILD_ALL "Build all superdex_physics CMake targets" OFF)
+option(SUPERDEX_PHYSICS_CORE_ONLY
+       "Build and install only the SuperDex/Mochi physics runtime SDK"
+       OFF)

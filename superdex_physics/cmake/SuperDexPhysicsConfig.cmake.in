@@ -1,0 +1,27 @@
+@PACKAGE_INIT@
+
+if (NOT TARGET SuperDex::MochiPhysics)
+    add_library(SuperDex::MochiPhysics SHARED IMPORTED)
+    set_target_properties(SuperDex::MochiPhysics PROPERTIES
+        IMPORTED_LOCATION
+            "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_LIBDIR@/@SUPERDEX_PHYSICS_LIBRARY_FILENAME@"
+        INTERFACE_INCLUDE_DIRECTORIES
+            "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_INCLUDEDIR@"
+        INTERFACE_COMPILE_FEATURES cxx_std_20
+        INTERFACE_COMPILE_DEFINITIONS
+            "MOCHI_PHYSICS_DYNAMICALLY_LINKED=1;MOCHI_USE_DOUBLE_PRECISION=@SUPERDEX_PHYSICS_USE_DOUBLE_PRECISION@")
+    if (MSVC)
+        if (@SUPERDEX_PHYSICS_USE_AVX512@)
+            target_compile_options(SuperDex::MochiPhysics INTERFACE /arch:AVX512)
+        else ()
+            target_compile_options(SuperDex::MochiPhysics INTERFACE /arch:AVX2)
+        endif ()
+    elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+        target_compile_options(SuperDex::MochiPhysics INTERFACE
+            -mbmi2 -mlzcnt -mpclmul -mfma -mf16c
+            $<IF:$<BOOL:@SUPERDEX_PHYSICS_USE_AVX512@>,-mavx512f,-mavx2>)
+    endif ()
+endif ()
+
+include("${CMAKE_CURRENT_LIST_DIR}/SuperDexPhysicsTargets.cmake")
+check_required_components(SuperDexPhysics)

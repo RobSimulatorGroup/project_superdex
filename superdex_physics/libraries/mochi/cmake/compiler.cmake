@@ -93,15 +93,12 @@ function (_mochi_check_language_compiler lang)
                 "${_mochi_bypass}")
         endif ()
     elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        if (NOT _id STREQUAL "Clang" OR _version VERSION_LESS 17)
+        if (NOT ((_id STREQUAL "Clang" AND NOT _version VERSION_LESS 17) OR
+                 (_id STREQUAL "GNU" AND NOT _version VERSION_LESS 12)))
             message(FATAL_ERROR
-                "[Mochi] Supported ${lang} compiler: Clang 17 or newer.\n"
+                "[Mochi] Supported ${lang} compilers: Clang 17 or newer, or GCC 12 or newer.\n"
                 "${_detected}\n"
-                "Install Clang 17 or newer with your package manager:\n"
-                "  Ubuntu/Debian: sudo apt install clang-17\n"
-                "  Fedora: sudo dnf install clang\n"
-                "  Arch Linux: sudo pacman -S clang\n"
-                "Clang is then selected automatically when it is on PATH.\n"
+                "Install a supported compiler with your package manager, or set both CC and CXX.\n"
                 "${_mochi_stale}\n"
                 "${_mochi_bypass}")
         endif ()

@@ -658,6 +658,16 @@ void EntityPostLastStage(
     CIntegrationDisplacementSlices& intDispls,
     CIntegrationVelocitySlices<DisplacementLayer::Default>& intVels);
 
+/**
+ * Add sparse world-frame nodal forces to a full-order soft actor's objective and residual.
+ */
+void AddExternalForces(
+    CExternalForces const& externalForces,
+    TransformRT const& worldFromLocal,
+    ColumnVectorView<real const> displacements,
+    double* outObj,
+    ColumnVectorView<real>* outRes);
+
 // Assemble just the volume term into CActorSnle.
 MOCHI_API void AssembleBody(
     AssemblyParams const& params, // external parameter
@@ -680,6 +690,7 @@ MOCHI_API void AssembleBody(
     CDisplacementSlice<real, TimeStep::StageStart> const& stageStartDispl,
     CVelocitySlice<real, TimeStep::StageStart> const& stageStartVel,
     CMassMatrix const& massMatrix,
+    CExternalForces const& externalForces,
     CRomProjectionStrategy const* romProjectionStrategy,
     CActorSnle& outActorSnle,
     CActiveVolumeElements const* activeVolumeElems = nullptr);

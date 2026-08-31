@@ -102,6 +102,49 @@ TEST_F(MochiSoftActorScene, GetSetDisplacements) {
   EXPECT_SPAN_EQ(_actor->GetDisplacements(ErrorAssert{}), MakeConstSpan(displ));
 }
 
+TEST_F(MochiSoftActorScene, ExternalNodalForcesMoveActor) {
+  _scene->SetGravity({0_r, 0_r, 0_r});
+  RecenteringParams recentering;
+  recentering.useRecentering = false;
+  _actor->SetRecenteringParams(recentering, test::ExpectOK{});
+  _actor->RegisterQuery(QueryType::NodePositions, test::ExpectOK{});
+  _scene->Step(0_r);
+
+  int const numNodes = isize(_coords);
+  DynamicArray<int> forceDofs;
+  DynamicArray<real> forceValues;
+  for (int node = 0; node < numNodes; ++node) {
+    forceDofs.push_back(3 * node);
+    forceValues.push_back(10_r);
+  }
+  _actor->SetExternalForcesOnDofs(forceDofs, forceValues, test::ExpectOK{});
+
+  DynamicArray<real> denseForces(kNumDofsSoft, 0_r);
+  _actor->GetExternalForces(denseForces, test::ExpectOK{});
+  for (int node = 0; node < numNodes; ++node) {
+    EXPECT_EQ(10_r, denseForces[3 * node]);
+    EXPECT_EQ(0_r, denseForces[3 * node + 1]);
+    EXPECT_EQ(0_r, denseForces[3 * node + 2]);
+  }
+
+  auto const before = _actor->GetNodePositionsLocal(test::ExpectOK{});
+  std::vector<real> beforeCopy(before.begin(), before.end());
+  _scene->Step(kDt);
+  auto const after = _actor->GetNodePositionsLocal(test::ExpectOK{});
+  ASSERT_EQ(beforeCopy.size(), after.size());
+  for (int node = 0; node < numNodes; ++node) {
+    EXPECT_GT(after[3 * node], beforeCopy[3 * node]);
+    EXPECT_NEAR(beforeCopy[3 * node + 1], after[3 * node + 1], 1e-5_r);
+    EXPECT_NEAR(beforeCopy[3 * node + 2], after[3 * node + 2], 1e-5_r);
+  }
+
+  _actor->ClearExternalForces();
+  _actor->GetExternalForces(denseForces, test::ExpectOK{});
+  EXPECT_TRUE(std::all_of(denseForces.begin(), denseForces.end(), [](real force) {
+    return force == 0_r;
+  }));
+}
+
 TEST_F(MochiSoftActorScene, GetSetSoftMaterialParamsField) {
   {
     auto const base = MakeNeoHookeanMaterial(1000_r);

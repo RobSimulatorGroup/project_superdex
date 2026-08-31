@@ -867,14 +867,14 @@ class Actor [no_init, no_destruct, use_scene] {
   // @param[in] forceValues Force values [N] for translation DoFs, torque values [N·m] for rotation DoFs.
   // Length must equal the number of DoF indices.
   //
-  // @note Only supported for rigid, articulated, rod, and shell actors.
+  // @note Only supported for rigid, articulated, soft, rod, and shell actors.
   // @note DoF indices use the same per-actor-type index layout documented by
   // @ref AddBoundaryConditionDofsWorld.
   // @note External forces can be cleared with @ref ClearExternalForces.
   // @note Replaces all previously set external forces, including external forces on DoFs not included in
   // @ref dofIndices. Passing empty @ref dofIndices and @ref forceValues is equivalent to calling
   // @ref ClearExternalForces.
-  // @note For rigid and shell actors, values are interpreted in the world frame.
+  // @note For rigid, soft, and shell actors, translational values are interpreted in the world frame.
   // @note For articulated actors, values are generalized forces in the actor's joint-DoF coordinate
   // basis.
   // @note For rod actors, forces on displacement DoFs are specified in the world frame, while

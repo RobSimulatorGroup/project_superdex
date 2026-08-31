@@ -274,6 +274,7 @@ void mochi::InitSoftActor(
 
   EmplaceSoftActorDiscretization(reg, e, shapePtr);
   reg.emplace<CDirichletBC<real>>(e);
+  reg.emplace<CExternalForces>(e);
 
   reg.emplace<CPrevRigidVelocity>(e);
 

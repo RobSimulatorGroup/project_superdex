@@ -22,3 +22,6 @@ option(SUPERDEX_BUILD_ROBOTICS "Build the superdex_robotics subproject" ON)
 option(SUPERDEX_BUILD_STUDIO "Build the superdex_studio application" OFF)
 
 option(SUPERDEX_BUILD_ALL "Build all SuperDex CMake targets" OFF)
+option(SUPERDEX_PHYSICS_CORE_ONLY
+       "Build and install only the SuperDex/Mochi physics runtime SDK"
+       OFF)

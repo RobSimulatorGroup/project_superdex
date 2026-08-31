@@ -174,6 +174,35 @@ void mochi::soft::EntityPostLastStage(
   integration::ApplyTimeIntegration<TimeTarget::StepEnd>(intState, intVels, currVel);
 }
 
+void mochi::soft::AddExternalForces(
+    CExternalForces const& externalForces,
+    TransformRT const& worldFromLocal,
+    ColumnVectorView<real const> displacements,
+    double* outObj,
+    ColumnVectorView<real>* outRes) {
+  if (!outObj && !outRes) {
+    return;
+  }
+
+  constexpr int kNumFields = 3;
+  int const numForces = isize(externalForces.dofs);
+  VMatrix3x3r const worldFromLocalR = ToVMatrix3x3(worldFromLocal.GetRotation());
+  for (int i = 0; i < numForces; ++i) {
+    int const dof = externalForces.dofs[i];
+    int const component = dof % kNumFields;
+    int const nodeStartIndex = dof - component;
+    i += deformable::details::AddTranslationalExternalForceEntry(
+        externalForces,
+        i,
+        component,
+        nodeStartIndex,
+        worldFromLocalR,
+        displacements,
+        outObj,
+        outRes);
+  }
+}
+
 void mochi::soft::EntityPostNewSolution(
     ColumnVectorView<real const> solution,
     ecs::Included<TagSoftActor>,
@@ -338,6 +367,7 @@ void mochi::soft::AssembleBody(
     CDisplacementSlice<real, TimeStep::StageStart> const& stageStartDispl,
     CVelocitySlice<real, TimeStep::StageStart> const& stageStartVel,
     CMassMatrix const& massMatrix,
+    CExternalForces const& externalForces,
     CRomProjectionStrategy const* romProjectionStrategy,
     CActorSnle& outActorSnle,
     CActiveVolumeElements const* activeVolElems) {
@@ -381,6 +411,16 @@ void mochi::soft::AssembleBody(
       massMatrix,
       outActorSnle,
       activeVolElems);
+
+  if (!externalForces.Empty()) {
+    ColumnVectorView<real> resView = AsView(outActorSnle.fullResidual);
+    AddExternalForces(
+        externalForces,
+        rootTransform.worldFromLocal,
+        AsConstView(currDispl.value),
+        params.assemObj ? &outActorSnle.objective : nullptr,
+        params.assemRes ? &resView : nullptr);
+  }
 }
 
 void mochi::soft::AssembleAsyncContact(

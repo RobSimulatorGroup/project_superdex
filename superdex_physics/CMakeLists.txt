@@ -47,6 +47,22 @@ include("cmake/settings.cmake")
 # Derived Settings
 #-----------------------------------------------------------------------------
 
+if (SUPERDEX_PHYSICS_CORE_ONLY)
+    set(SUPERDEX_PHYSICS_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(SUPERDEX_PHYSICS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_ALL OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_DEBUGGER OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_IMGUIOS OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_RENDERER OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_MESH_LIB OFF CACHE BOOL "" FORCE)
+    set(MOCHI_BUILD_MESH_CLI OFF CACHE BOOL "" FORCE)
+    set(MOCHI_USE_EIGEN OFF CACHE BOOL "" FORCE)
+    set(MOCHI_USE_HDF5 OFF CACHE BOOL "" FORCE)
+    set(MOCHI_USE_PYBIND OFF CACHE BOOL "" FORCE)
+endif ()
+
 if (SUPERDEX_PHYSICS_BUILD_ALL)
     set(SUPERDEX_PHYSICS_BUILD_BENCHMARKS ON CACHE BOOL "" FORCE)
     set(SUPERDEX_PHYSICS_BUILD_TESTS ON CACHE BOOL "" FORCE)
@@ -76,5 +92,63 @@ add_subdirectory("${SUPERDEX_MOCHI_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/moc
 #-----------------------------------------------------------------------------
 
 mochi_add_interface(superdex_physics)
-target_include_directories(superdex_physics INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
-target_link_libraries(superdex_physics INTERFACE mochi_physics)
+set_target_properties(superdex_physics PROPERTIES EXPORT_NAME Physics)
+target_compile_features(superdex_physics INTERFACE cxx_std_20)
+target_include_directories(superdex_physics INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>)
+target_link_libraries(superdex_physics INTERFACE
+    $<BUILD_INTERFACE:mochi_physics>
+    $<INSTALL_INTERFACE:SuperDex::MochiPhysics>)
+add_library(SuperDex::Physics ALIAS superdex_physics)
+
+# Keep the install package deliberately narrow. mochi_core and the debugger
+# support archive are linked into mochi_physics; marl is its only non-system
+# runtime dependency in the core-only configuration.
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+set_target_properties(mochi_physics marl PROPERTIES INSTALL_RPATH "$ORIGIN")
+install(TARGETS mochi_physics marl
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+install(TARGETS superdex_physics
+    EXPORT SuperDexPhysicsTargets)
+
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(DIRECTORY "${SUPERDEX_MOCHI_SOURCE_DIR}/mochi_physics/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(DIRECTORY "${SUPERDEX_MOCHI_SOURCE_DIR}/mochi_core/include/"
+    DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+set(SUPERDEX_PHYSICS_USE_DOUBLE_PRECISION 0)
+set(SUPERDEX_PHYSICS_USE_AVX512 0)
+set(SUPERDEX_PHYSICS_LIBRARY_NAME "mochi_physics")
+if (MOCHI_USE_DOUBLE_PRECISION)
+    set(SUPERDEX_PHYSICS_USE_DOUBLE_PRECISION 1)
+    set(SUPERDEX_PHYSICS_LIBRARY_NAME "mochi_physics_double")
+endif ()
+if (MOCHI_USE_AVX512)
+    set(SUPERDEX_PHYSICS_USE_AVX512 1)
+endif ()
+set(SUPERDEX_PHYSICS_LIBRARY_FILENAME
+    "${CMAKE_SHARED_LIBRARY_PREFIX}${SUPERDEX_PHYSICS_LIBRARY_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX}")
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SuperDexPhysicsConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/SuperDexPhysicsConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/SuperDexPhysics")
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/SuperDexPhysicsConfigVersion.cmake"
+    VERSION 1.0.0
+    COMPATIBILITY SameMajorVersion)
+
+install(EXPORT SuperDexPhysicsTargets
+    FILE SuperDexPhysicsTargets.cmake
+    NAMESPACE SuperDex::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/SuperDexPhysics")
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/SuperDexPhysicsConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/SuperDexPhysicsConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/SuperDexPhysics")
