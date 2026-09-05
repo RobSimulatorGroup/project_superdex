@@ -137,6 +137,7 @@ void mochi::soft::EntityPostStage(
     ecs::Excluded<TagRomActor>,
     CConvergenceStatus const& convergence,
     CTimeIntegratorState const& intState,
+    CDisplacementSlice<real, TimeStep::Previous> const& prevDispl,
     CDisplacementSlice<real, TimeStep::StageStart> const& stageStartDispl,
     CDisplacementSlice<real, TimeStep::Current>& currDispl,
     CVelocitySlice<real, TimeStep::Current>& currVel,
@@ -148,9 +149,10 @@ void mochi::soft::EntityPostStage(
   // of the displacements at the beginning and at the end of the stage.
   currVel.value = (currDispl.value - stageStartDispl.value) * (1_r / intState.dtStage);
 
-  // If the solver diverged, reset the displacements and velocities to zero.
+  // Preserve the last accepted configuration when the solver diverges. Resetting the
+  // displacement to zero teleports a deformed actor back to its authored rest pose.
   if (convergence.stageStatus == ConvergenceStatus::Diverged) {
-    currDispl.value.SetZero();
+    currDispl.CopyFrom(prevDispl);
     currVel.value.SetZero();
   }
 

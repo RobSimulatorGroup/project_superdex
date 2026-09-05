@@ -18,8 +18,11 @@
 
 #include <mochi_core/test/mochi_test_helpers.h>
 #include <mochi_physics/mochi_physics.h>
+#include <mochi_physics/mochi_physics_experimental.h>
 
 #include <gtest/gtest.h>
+
+#include <vector>
 
 using namespace mochi;
 
@@ -43,12 +46,28 @@ class SceneConvergenceStatus : public test::MochiSceneTestBase {
         Flatten(MakeSpan(c)), Flatten(MakeSpan(t)), test::ExpectOK{});
   }
 
+  ShapeHandle CreateSmallTriShape() {
+    real constexpr kScale = 0.1_r;
+    auto [c, t] = test::CreateMinimalTriMeshUnitCube(Real3{kScale, kScale, kScale});
+    return _mochiContext->CreateTriMeshShape(
+        Flatten(MakeSpan(c)), Flatten(MakeSpan(t)), test::ExpectOK{});
+  }
+
   Actor* CreateSoft(Real3 translation, bool hasGravity) {
     SoftActorParams p;
     p.shape = CreateSmallTetShape();
     p.worldFromLocal = TransformRT{translation};
     p.hasGravity = hasGravity;
     return _scene->CreateSoftActor(p, test::ExpectOK{});
+  }
+
+  Actor* CreateShell(Real3 translation, bool hasGravity) {
+    experimental::ShellActorParams p;
+    p.shape = CreateSmallTriShape();
+    p.colliderType = ColliderType::None;
+    p.worldFromLocal = TransformRT{translation};
+    p.hasGravity = hasGravity;
+    return experimental::CreateShellActor(_scene, p, test::ExpectOK{});
   }
 
   Actor* CreateStaticRigid(Real3 translation) {
@@ -194,6 +213,80 @@ TEST_F(SceneConvergenceStatus, DivergedDominates) {
   SetSolverForDiverged();
   _scene->Step(kDt);
   EXPECT_EQ(ConvergenceStatus::Diverged, _scene->GetSolverStats().convergenceStatus);
+}
+
+// Divergence must reject the failed step without teleporting deformable actors to their authored
+// rest pose. The previous accepted deformation is the safe fallback for both volume and shell
+// actors, matching the existing rigid-body rollback policy.
+TEST_F(SceneConvergenceStatus, DivergedDeformablesPreservePreviousConfiguration) {
+  test::ExpectLoggingInScope expectWarning(_mochiContext, LogChannel::Warning);
+
+  auto* soft = CreateSoft({0_r, 0_r, 0_r}, /*hasGravity*/ false);
+  auto* shell = CreateShell({5_r, 0_r, 0_r}, /*hasGravity*/ false);
+  RecenteringParams recentering;
+  recentering.useRecentering = false;
+  soft->SetRecenteringParams(recentering, test::ExpectOK{});
+  soft->RegisterQueryAndCompute(QueryType::NodePositions, test::ExpectOK{});
+  shell->RegisterQueryAndCompute(QueryType::NodePositions, test::ExpectOK{});
+
+  auto deform = [](Actor* actor) {
+    auto const positions = actor->GetNodePositionsLocal(test::ExpectOK{});
+    std::vector<real> deformed(positions.begin(), positions.end());
+    deformed.front() += 0.01_r;
+    actor->SetNodePositionsLocal(MakeConstSpan(deformed), test::ExpectOK{});
+    return deformed;
+  };
+  auto const softBefore = deform(soft);
+  auto const shellBefore = deform(shell);
+
+  SetSolverForDiverged();
+  _scene->Step(kDt);
+
+  EXPECT_EQ(ConvergenceStatus::Diverged, soft->GetConvergenceStatus());
+  EXPECT_EQ(ConvergenceStatus::Diverged, shell->GetConvergenceStatus());
+  EXPECT_TRUE(test::NearEqualSpan(
+      MakeConstSpan(softBefore), soft->GetNodePositionsLocal(test::ExpectOK{})));
+  EXPECT_TRUE(test::NearEqualSpan(
+      MakeConstSpan(shellBefore), shell->GetNodePositionsLocal(test::ExpectOK{})));
+}
+
+// Cover the step-to-step case that matters for interactive manipulation: first advance both
+// actors to a non-rest configuration under gravity, then reject the following step. This catches
+// rollback implementations that only work immediately after an API-authored deformation.
+TEST_F(SceneConvergenceStatus, DivergedDeformablesPreserveLastAcceptedStep) {
+  test::ExpectLoggingInScope expectWarning(_mochiContext, LogChannel::Warning);
+
+  auto* soft = CreateSoft({0_r, 0_r, 0_r}, /*hasGravity*/ true);
+  auto* shell = CreateShell({5_r, 0_r, 0_r}, /*hasGravity*/ true);
+  soft->SetRecenteringParams(
+      RecenteringParams{.useRecentering = false}, test::ExpectOK{});
+  soft->RegisterQueryAndCompute(QueryType::NodePositions, test::ExpectOK{});
+  shell->RegisterQueryAndCompute(QueryType::NodePositions, test::ExpectOK{});
+
+  auto copyPositions = [](Actor* actor) {
+    auto const positions = actor->GetNodePositionsLocal(test::ExpectOK{});
+    return std::vector<real>(positions.begin(), positions.end());
+  };
+  auto const softInitial = copyPositions(soft);
+  auto const shellInitial = copyPositions(shell);
+
+  _scene->Step(kDt);
+  ASSERT_EQ(ConvergenceStatus::Converged, soft->GetConvergenceStatus());
+  ASSERT_EQ(ConvergenceStatus::Converged, shell->GetConvergenceStatus());
+  auto const softBefore = copyPositions(soft);
+  auto const shellBefore = copyPositions(shell);
+  EXPECT_FALSE(test::NearEqualSpan(softInitial, softBefore, 1e-6_r));
+  EXPECT_FALSE(test::NearEqualSpan(shellInitial, shellBefore, 1e-6_r));
+
+  SetSolverForDiverged();
+  _scene->Step(kDt);
+
+  EXPECT_EQ(ConvergenceStatus::Diverged, soft->GetConvergenceStatus());
+  EXPECT_EQ(ConvergenceStatus::Diverged, shell->GetConvergenceStatus());
+  EXPECT_TRUE(test::NearEqualSpan(
+      MakeConstSpan(softBefore), soft->GetNodePositionsLocal(test::ExpectOK{})));
+  EXPECT_TRUE(test::NearEqualSpan(
+      MakeConstSpan(shellBefore), shell->GetNodePositionsLocal(test::ExpectOK{})));
 }
 
 // Multi-stage integrators (e.g. DIRK22) run several solver stages per step. The reported status

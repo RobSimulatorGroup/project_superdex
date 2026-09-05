@@ -630,7 +630,7 @@ void EntityPreStage(
 /*
  * System executed after each time integration stage:
  * - It computes the velocities at the end of the stage.
- * - If the solver diverged, it resets the displacements ane velocities to zero.
+ * - If the solver diverged, it restores the previous-step displacements and resets velocities.
  * - It pushes the displacements and velocities at the end of the stage to the vectors containing
  *   the displacements and velocities at the end of each time integration stage.
  */
@@ -639,6 +639,7 @@ void EntityPostStage(
     ecs::Excluded<TagRomActor>,
     CConvergenceStatus const& convergence,
     CTimeIntegratorState const& intState,
+    CDisplacementSlice<real, TimeStep::Previous> const& prevDispl,
     CDisplacementSlice<real, TimeStep::StageStart> const& stageStartDispl,
     CDisplacementSlice<real, TimeStep::Current>& currDispl,
     CVelocitySlice<real, TimeStep::Current>& currVel,

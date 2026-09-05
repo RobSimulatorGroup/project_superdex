@@ -286,6 +286,7 @@ void EntityPostStage(
     ecs::Included<TagShellActor>,
     CConvergenceStatus const& convergence,
     CTimeIntegratorState const& intState,
+    CDisplacementSlice<real, TimeStep::Previous> const& prevDispl,
     CDisplacementSlice<real, TimeStep::StageStart> const& stageStartDispl,
     CDisplacementSlice<real, TimeStep::Current>& currDispl,
     CVelocitySlice<real, TimeStep::Current>& currVel,
