@@ -367,6 +367,15 @@ bool NewtonSolver<T>::TakeStep(
       : sol.Duplicate(); // For performance, perform copy only if potentially needed
 
   // Line-search in dx direction
+  using ProfileClock = std::chrono::steady_clock;
+  auto const profileStart = status.recordTimings ? ProfileClock::now() : ProfileClock::time_point{};
+  MOCHI_DEFER({
+    if (status.recordTimings) {
+      status.lineSearchDurationSec +=
+          std::chrono::duration<double>(ProfileClock::now() - profileStart).count();
+      ++status.lineSearchCalls;
+    }
+  });
   bool const improved = _lineSearch(problem, status, _params.lineSearch);
   status.totalNumLSIterDone += status.numLastLSIterDone;
 
@@ -600,7 +609,7 @@ void NewtonSolver<T>::PrepareLinearOperator(
 }
 
 template <typename T>
-NewtonSolverStatus<T> NewtonSolver<T>::Solve(Problem& problem) {
+NewtonSolverStatus<T> NewtonSolver<T>::Solve(Problem& problem, bool recordTimings) {
   MOCHI_PROFILE_SCOPE();
 
   // Set all dirty flags in case the same Problem structure is re-used, e.g. with multi-stage time
@@ -612,6 +621,7 @@ NewtonSolverStatus<T> NewtonSolver<T>::Solve(Problem& problem) {
 
   // Create solver result
   Status status;
+  status.recordTimings = recordTimings;
   status.dxSolve.Resize(problem.GetDofsSize());
   status.dxSolve.SetConstant(std::numeric_limits<real>::infinity());
 
@@ -740,11 +750,23 @@ NewtonSolverStatus<T> NewtonSolver<T>::Solve(Problem& problem) {
           !details::IsCudaSolver(_params.lParams.solverType) &&
           ((_params.lParams.preconditionerType == PreconditionerType::None) ||
            (_params.lParams.preconditionerType == PreconditionerType::PerActor));
+      using ProfileClock = std::chrono::steady_clock;
+      auto profileStart = recordTimings ? ProfileClock::now() : ProfileClock::time_point{};
       PrepareLinearOperator(problem, status, useIslandOperators, projectPsd, linOp);
+      if (recordTimings) {
+        auto const now = ProfileClock::now();
+        status.linearSetupDurationSec += std::chrono::duration<double>(now - profileStart).count();
+        profileStart = now;
+      }
 
       // Solve the linear system.
       dxSolve.SetZero();
       auto linearResult = _linearSolver->Solve(linOp, problem.GetResidual(), dxSolve);
+      if (recordTimings) {
+        status.linearSolveDurationSec +=
+            std::chrono::duration<double>(ProfileClock::now() - profileStart).count();
+        ++status.linearSolveCalls;
+      }
 
       if (linearResult.converged && _params.verbosity >= VerbosityLevel::Verbose) {
         MOCHI_LOG(

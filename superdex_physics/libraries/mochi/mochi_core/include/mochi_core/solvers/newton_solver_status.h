@@ -65,6 +65,14 @@ struct NewtonSolverStatus {
   /// @brief Total number of iterations of the linear solver across all Newton iterations.
   int totalNumLinearIterDone = 0;
 
+  // Optional inclusive timings. Line search includes its residual/energy assemblies.
+  bool recordTimings = false;
+  double linearSetupDurationSec = 0.0;
+  double linearSolveDurationSec = 0.0;
+  double lineSearchDurationSec = 0.0;
+  int linearSolveCalls = 0;
+  int lineSearchCalls = 0;
+
   /// @brief Whether the most recent Newton iteration improved the figure of merit monitored by the
   /// line search.
   bool improvedInLastIter = false;

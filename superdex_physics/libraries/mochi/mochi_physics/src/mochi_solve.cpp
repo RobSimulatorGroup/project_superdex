@@ -15,6 +15,7 @@
  */
 
 #include "mochi_solve.h"
+#include "mochi_step_profiling.h"
 
 #include "mochi_actor_convergence.h"
 #include "mochi_articulated_body.h"
@@ -324,10 +325,16 @@ void solver::UpdateDerivedStateBeforeAssembly(
   // Collision detection is needed only for first-order terms.
   if (IsAssemblyNeeded(StateDependency::FirstOrder, false /*inputDependency*/, gradTarget)) {
     // Perform collision detection.
-    CollisionDetectionPipeline<TimeStep::Current>(reg, descendants);
+    {
+      ScopedStepTiming timing(reg, StepProfileStage::CollisionDetection);
+      CollisionDetectionPipeline<TimeStep::Current>(reg, descendants);
+    }
 
     // Set up contact Jacobians. Also calls updateJacobianSem.Wait().
-    ContactJacobiansPipeline(reg, gradTarget, descendants, updateJacobianSem);
+    {
+      ScopedStepTiming timing(reg, StepProfileStage::ContactJacobians);
+      ContactJacobiansPipeline(reg, gradTarget, descendants, updateJacobianSem);
+    }
   } else {
     // Wait for any tasks scheduled by UpdateJacobiansSubpipeline.
     updateJacobianSem.Wait();
@@ -598,6 +605,7 @@ void mochi::solver::AssembleIslandPipeline(
     AssemblyParams const& params,
     SnleProblem<real>& problem) {
   MOCHI_PROFILE_SCOPE();
+  ScopedStepTiming timing(reg, StepProfileStage::Assembly);
   MOCHI_PROFILE_DESCRIPTION_F(
       "assemObj: %d\nassemRes: %d\nassemDres: %d",
       static_cast<int>(params.assemObj),
@@ -1141,7 +1149,14 @@ bool mochi::solver::StepIslandNewtonAsync(
 
     // Stage solve: the non-linear problem is solved. Islands have no knowledge on the physical
     // problem being solved here, they only serve as a brigde between solver and actors.
-    NewtonSolverStatus<real> result = snleSolver.Solve(problem);
+    auto* profile = reg.try_ctx<CStepProfile>();
+    NewtonSolverStatus<real> result = snleSolver.Solve(problem, profile != nullptr);
+    if (profile) {
+      profile->Add(StepProfileStage::LinearSetup, result.linearSetupDurationSec, result.linearSolveCalls);
+      profile->Add(StepProfileStage::LinearSolve, result.linearSolveDurationSec, result.linearSolveCalls);
+      profile->Add(StepProfileStage::LineSearch, result.lineSearchDurationSec, result.lineSearchCalls);
+      profile->linearIterations.fetch_add(result.totalNumLinearIterDone, std::memory_order_relaxed);
+    }
     success &= (result.convergence == ConvergenceStatus::Converged);
     islandSolverStats.stages.emplace_back(StageSolverStats::FromNewtonSolverStatus(result));
 

@@ -83,7 +83,7 @@ class NewtonSolver {
   Params const& GetParams() const;
 
   /** @brief Solves the specified system of non-linear equations. */
-  Status Solve(Problem& problem);
+  Status Solve(Problem& problem, bool recordTimings = false);
 
  protected:
   /**

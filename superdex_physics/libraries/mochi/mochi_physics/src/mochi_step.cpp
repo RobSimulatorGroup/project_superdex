@@ -15,6 +15,7 @@
  */
 
 #include "mochi_step.h"
+#include "mochi_step_profiling.h"
 
 #include "mochi_articulated_body.h"
 #include "mochi_common_components.h"
@@ -497,9 +498,18 @@ void mochi::StepEcs(entt::registry& reg) {
       }
       MOCHI_DEFER(if (useLocalSingleThreadedMode) { TaskScheduler::PopLocalSingleThreadedMode(); });
 
-      PreStepIslandAsync(reg, descendants);
-      solver::StepIslandNewtonAsync(reg, island, descendants);
-      PostStepIslandAsync(reg, descendants);
+      {
+        ScopedStepTiming timing(reg, StepProfileStage::IslandPrepare);
+        PreStepIslandAsync(reg, descendants);
+      }
+      {
+        ScopedStepTiming timing(reg, StepProfileStage::IslandNewton);
+        solver::StepIslandNewtonAsync(reg, island, descendants);
+      }
+      {
+        ScopedStepTiming timing(reg, StepProfileStage::IslandQueries);
+        PostStepIslandAsync(reg, descendants);
+      }
     });
   });
 

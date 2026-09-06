@@ -46,6 +46,7 @@
 #include "mochi_soft_rom_init.h"
 #include "mochi_soft_skinned.h"
 #include "mochi_step.h"
+#include "mochi_step_profiling.h"
 
 #include <mochi_core/geometry/geometry_utils.h>
 #include <mochi_core/integration/integration_utils.h>
@@ -586,8 +587,39 @@ void SceneImpl::SetSolverParams(SolverParams const& params, Error& error) {
   }
 }
 
+void SetStepProfilingEnabled(Scene& scene, bool enabled) {
+  auto& reg = static_cast<SceneImpl&>(scene).GetRegistry();
+  if (enabled) {
+    if (!reg.try_ctx<CStepProfile>()) {
+      reg.set<CStepProfile>();
+    }
+    reg.ctx<CStepProfile>().Reset();
+  } else {
+    reg.unset<CStepProfile>();
+  }
+}
+
+StepProfile GetStepProfile(Scene const& scene) {
+  auto const& reg = static_cast<SceneImpl const&>(scene).GetRegistry();
+  auto const* profile = reg.try_ctx<CStepProfile>();
+  StepProfile result;
+  if (profile) {
+    result.enabled = true;
+    for (size_t i = 0; i < result.stages.size(); ++i) {
+      result.stages[i].seconds = profile->stages[i].seconds.load(std::memory_order_relaxed);
+      result.stages[i].calls = profile->stages[i].calls.load(std::memory_order_relaxed);
+    }
+    result.linearIterations = profile->linearIterations.load(std::memory_order_relaxed);
+  }
+  return result;
+}
+
 void SceneImpl::Step(double timeStepSec) {
   MOCHI_PROFILE_SCOPE();
+
+  if (auto* profile = _registry.try_ctx<CStepProfile>()) {
+    profile->Reset();
+  }
 
   if (!(timeStepSec >= 0.0))
     MOCHI_UNLIKELY {
@@ -639,13 +671,22 @@ void SceneImpl::Step(double timeStepSec) {
     _registry.ctx<CSceneTime>().Advance(timeStepSec);
 
     // ECS compute velocities and prepare actors
-    PreStepEcs(_registry);
+    {
+      ScopedStepTiming timing(_registry, StepProfileStage::PreStep);
+      PreStepEcs(_registry);
+    }
 
     // ECS (step actors):
-    StepEcs(_registry);
+    {
+      ScopedStepTiming timing(_registry, StepProfileStage::Islands);
+      StepEcs(_registry);
+    }
 
     // ECS
-    PostStepEcs(_registry);
+    {
+      ScopedStepTiming timing(_registry, StepProfileStage::PostStep);
+      PostStepEcs(_registry);
+    }
 
     stepDuration = ToSeconds(timer.GetElapsed());
 
