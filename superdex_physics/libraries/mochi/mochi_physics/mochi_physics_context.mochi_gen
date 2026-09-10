@@ -656,8 +656,9 @@ class Context [no_init, no_destruct, singleton] {
   // @details Returns a triangle mesh (3 nodes per element) representing the shape's surface.
   // The coordinate array contains exactly the surface nodes referenced by the returned connectivity;
   // nodes present in the underlying main mesh but not referenced by any surface triangle are omitted.
-  // Connectivity values are indices into this returned coordinate array. For shapes without a
-  // surface mesh, returns an empty view.
+  // Connectivity values are indices into this returned coordinate array. For polyline shapes with
+  // an authored contact skin, returns that skin. For shapes without a surface mesh, returns an
+  // empty view.
   //
   // @note For triangular mesh shapes, this may differ from @ref GetShapeMesh if the main mesh
   // contains unreferenced nodes. For tetrahedral mesh shapes, this is the boundary surface of the

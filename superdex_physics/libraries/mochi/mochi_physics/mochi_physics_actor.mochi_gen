@@ -379,8 +379,9 @@ class Actor [no_init, no_destruct, use_scene] {
   // @details Returns a compact triangle mesh for the actor's surface. For volumetric simulation
   // meshes, the surface is the boundary triangles. For triangular simulation meshes, the surface
   // has the same triangle elements as the simulation mesh, but nodes not referenced by any surface
-  // triangle are omitted and remaining nodes may be reindexed. Returns an empty view if the actor
-  // does not have a surface mesh.
+  // triangle are omitted and remaining nodes may be reindexed. For rod actors with an authored
+  // contact skin, returns that skin regardless of the actor's selected collision representation.
+  // Returns an empty view if the actor does not have a surface mesh.
   //
   // @return A non-owning view of the actor's reference surface mesh, or an empty view if the actor
   // has no surface mesh.
@@ -432,6 +433,8 @@ class Actor [no_init, no_destruct, use_scene] {
   // are available after the simulation step completes.
   // @note Requires the actor to support @ref QueryType::SurfaceNodePositions.
   // @note The node ordering corresponds to the mesh connectivity from @ref GetSurfaceMesh.
+  // @note Supported for rod actors whose shape has an authored contact skin, regardless of whether
+  // that skin is selected for collision.
   //
   // @see RegisterQuery, QueryType::SurfaceNodePositions, GetSurfaceMesh,
   // GetSurfaceMeshNodeNormalsLocal
@@ -448,6 +451,8 @@ class Actor [no_init, no_destruct, use_scene] {
   // are available after the simulation step completes.
   // @note Requires the actor to support @ref QueryType::SurfaceNodeNormals.
   // @note The node ordering corresponds to the mesh connectivity from @ref GetSurfaceMesh.
+  // @note Supported for rod actors whose shape has an authored contact skin, regardless of whether
+  // that skin is selected for collision.
   //
   // @see RegisterQuery, QueryType::SurfaceNodeNormals, GetSurfaceMesh,
   // GetSurfaceMeshNodePositionsLocal

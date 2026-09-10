@@ -120,6 +120,28 @@ class SceneSyncTest : public MochiDebuggerTest {
     return experimental::CreateRodActor(scene, params, test::ExpectOK{})->GetHandle();
   }
 
+  ActorHandle CreateActorWithContactSkinOnly(Scene* scene) {
+    ModelData model;
+    model.mesh.emplace();
+    model.mesh->nodesPerElement = 2;
+    model.mesh->coordinates = {0_r, 0_r, 0_r, 1_r, 0_r, 0_r};
+    model.mesh->connectivity = {0, 1};
+    model.elementFrameAxes = {0_r, 1_r, 0_r};
+    model.contactSkinMesh.emplace();
+    model.contactSkinMesh->nodesPerElement = 3;
+    model.contactSkinMesh->coordinates = {0.5_r, 0_r, 0_r, 0.5_r, 0.1_r, 0_r, 0.5_r, 0_r, 0.1_r};
+    model.contactSkinMesh->connectivity = {0, 1, 2};
+    model.contactSkinMesh->skinning.emplace();
+    model.contactSkinMesh->skinning->weightsPerNode = 1;
+    model.contactSkinMesh->skinning->indices = {0, 0, 0};
+    model.contactSkinMesh->skinning->weights = {1_r, 1_r, 1_r};
+
+    experimental::RodActorParams params;
+    params.name = "ContactSkinOnly";
+    params.shape = _context->CreateModelShape(model, test::ExpectOK{});
+    return experimental::CreateRodActor(scene, params, test::ExpectOK{})->GetHandle();
+  }
+
   ActorHandle CreateShellActorWithVisualMesh(Scene* scene) {
     experimental::ShellActorParams params;
     params.name = "ShellVisualMesh";
@@ -1080,6 +1102,31 @@ TEST_F(SceneSyncTest, SwitchMeshSourceResendsCompleteMeshesWithoutStepping) {
   EXPECT_GT(
       ExpectActorMeshTopologyMatches(shellHandle, shellActor->GetVisualMesh()),
       shellSurfaceRevision);
+}
+
+TEST_F(SceneSyncTest, ContactSkinOnlyRodSyncsAsSurfaceMesh) {
+  Scene* scene = CreateSceneNoGravity();
+  SceneHandle const sceneHandle = scene->GetHandle();
+  ActorHandle const rodHandle = CreateActorWithContactSkinOnly(scene);
+  Actor* const rod = scene->GetActor(rodHandle);
+  ASSERT_NE(nullptr, rod);
+  ASSERT_TRUE(rod->GetVisualMesh().IsEmpty());
+  ASSERT_FALSE(rod->GetSurfaceMesh().IsEmpty());
+
+  StartServer();
+  ConnectClient();
+  test::WaitUntil([&] { return ClientHasScene(sceneHandle); });
+
+  SetSceneSyncParams(MeshSyncParams());
+  _client->SelectScene(sceneHandle);
+  uint64_t const baseCounter = GetSceneSyncData().counter;
+  WaitForSync(scene, baseCounter + 1);
+  uint64_t const revision = ExpectActorMeshMatches(rodHandle, rod->GetSurfaceMesh());
+  EXPECT_GT(revision, 0);
+
+  scene->Step(kTimeStep);
+  WaitForSync(scene, baseCounter + 2);
+  EXPECT_EQ(revision, ExpectActorMeshTopologyMatches(rodHandle, rod->GetSurfaceMesh()));
 }
 
 TEST_F(SceneSyncTest, SyncActorMeshes) {

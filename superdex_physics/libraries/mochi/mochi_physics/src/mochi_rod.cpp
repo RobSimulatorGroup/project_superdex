@@ -90,6 +90,7 @@ void InitializeOnce(entt::registry& reg) {
   ecs::RegisterComponent<CRodPose<TimeStep::StageStart>>(reg);
   ecs::RegisterComponent<CRodPose<TimeStep::Previous>>(reg);
   ecs::RegisterComponent<CRodVisualMeshEmbedding>(reg);
+  ecs::RegisterComponent<CRodSurfaceMeshEmbedding>(reg);
   ecs::RegisterComponent<CRodContactSkin>(reg);
   ecs::RegisterComponent<CRodContactSkinningData>(reg);
   ecs::RegisterComponent<CRodDeformedContactSkinNodes>(reg);
@@ -376,7 +377,8 @@ void ComputeRodNodeCurvatureBinormals(
 }
 
 // Compute deformed triangular-surface node positions from a rod pose.
-// Writes numSurfaceNodes × 3 values to outPositions (must be pre-sized).
+// Writes either every surface node or the requested node subset to outPositions (must be
+// pre-sized). outputNodeIndices uses full-mesh node indices and preserves its input ordering.
 //
 // Implementation: two passes, with SIMD-friendly per-element transforms.
 //   Pass 1 (per element, with periodic wrap): cache the per-element affine map
@@ -392,8 +394,10 @@ static void ComputeDeformedSurfaceNodePositions(
     RodSurfaceEmbeddingData const& embedding,
     CPolylineMesh const& polylineMesh,
     RodPose const& rodPose,
-    Span<real> outPositions) {
+    Span<real> outPositions,
+    Span<int const> outputNodeIndices = {}) {
   int const numSurfaceNodes = surfaceMesh.GetNumNodes();
+  int const numOutputNodes = outputNodeIndices.empty() ? numSurfaceNodes : isize(outputNodeIndices);
   int const K = embedding.weightsPerNode;
   int const numElements = polylineMesh.NumElements();
   auto const centerlineNodes = polylineMesh.nodes;
@@ -401,7 +405,7 @@ static void ComputeDeformedSurfaceNodePositions(
   auto const& frameAxes = rodPose.frameAxes;
 
   MOCHI_ASSERT_VERBOSE(
-      isize(outPositions) == kSpaceDim3 * numSurfaceNodes, "outPositions must be pre-sized");
+      isize(outPositions) == kSpaceDim3 * numOutputNodes, "outPositions must be pre-sized");
   MOCHI_ASSERT_VERBOSE(
       isize(embedding.invReferenceLengths) == numElements,
       "invReferenceLengths size must match number of elements");
@@ -430,10 +434,11 @@ static void ComputeDeformedSurfaceNodePositions(
 
   // Pass 2: per-surface-node skinning. Evaluate affine · [xi, 1] via DotVecMat4x4 on the
   // transposed transform; lane 3 of the result is meaningless and discarded by Store<3>.
-  for (int i = 0; i < numSurfaceNodes; ++i) {
+  for (int i = 0; i < numOutputNodes; ++i) {
+    int const surfaceNodeIndex = outputNodeIndices.empty() ? i : outputNodeIndices[i];
     Vec4r xSurface{};
     for (int m = 0; m < K; ++m) {
-      int const idx = i * K + m;
+      int const idx = surfaceNodeIndex * K + m;
       int const elemIdx = embedding.elementIndices[idx];
       real const w = embedding.weights[idx];
       Real3 const xi = embedding.localCoordinates[idx];
@@ -668,6 +673,25 @@ void mochi::rod::UpdateQueryVisualNodePositionsAndNormals(
   if (outVisNormQuery) {
     UpdateQueryVisualNodeNormals(false, visualMesh, outVisPosQuery, *outVisNormQuery);
   }
+}
+
+void mochi::rod::UpdateQuerySurfaceNodePositions(
+    CSurfaceMesh const& surfaceMesh,
+    CRodSurfaceMeshEmbedding const& rodEmbedding,
+    CPolylineMesh const& polylineMesh,
+    CRodPose<TimeStep::Current> const& rodPose,
+    CQuerySurfaceNodePositions& outSurfacePosQuery) {
+  MOCHI_PROFILE_SCOPE();
+
+  auto const activeNodes = surfaceMesh.mesh->GetActiveNodes();
+  outSurfacePosQuery.nodePositions.resize(static_cast<size_t>(kSpaceDim3) * activeNodes.size());
+  ComputeDeformedSurfaceNodePositions(
+      *surfaceMesh.mesh,
+      *rodEmbedding.data,
+      polylineMesh,
+      rodPose.value,
+      MakeSpan(outSurfacePosQuery.nodePositions),
+      activeNodes);
 }
 
 void mochi::rod::InitializeContactSkinningJacobian(
@@ -1260,6 +1284,13 @@ void mochi::InitRodActor(
 
   // Store the shape
   reg.emplace<CShape>(e, shapePtr);
+
+  // The authored contact skin is exposed as the rod's surface independently of which geometry is
+  // selected for contact.
+  if (hasUsableContactSkin) {
+    reg.emplace<CSurfaceMesh>(e, shapeContactSkinMesh);
+    reg.emplace<CRodSurfaceMeshEmbedding>(e, shapeContactSkinEmbedding);
+  }
 
   // Set up DoF information
   // Each node has 4 DoFs: 3 displacement + 1 twist

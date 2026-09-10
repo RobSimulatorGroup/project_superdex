@@ -2502,6 +2502,37 @@ TEST_P(MochiContextTest, GetShapeSurfaceMesh_TriMeshOmitsUnreferencedNodes) {
   EXPECT_SPAN_EQ(MakeConstSpan(kExpectedConnectivity), surfaceView.connectivity);
 }
 
+TEST_P(MochiContextTest, GetShapeSurfaceMesh_PolylineReturnsContactSkin) {
+  ModelData model;
+  model.mesh.emplace();
+  model.mesh->nodesPerElement = 2;
+  model.mesh->coordinates = {0_r, 0_r, 0_r, 1_r, 0_r, 0_r};
+  model.mesh->connectivity = {0, 1};
+  model.elementFrameAxes = DynamicArray<real>{0_r, 1_r, 0_r};
+  model.contactSkinMesh.emplace();
+  model.contactSkinMesh->nodesPerElement = 3;
+  model.contactSkinMesh->coordinates = {
+      10_r, 10_r, 10_r, 0.5_r, 0_r, 0_r, 0.5_r, 0.1_r, 0_r, 0.5_r, 0_r, 0.1_r};
+  model.contactSkinMesh->connectivity = {1, 2, 3};
+  model.contactSkinMesh->skinning.emplace();
+  model.contactSkinMesh->skinning->weightsPerNode = 1;
+  model.contactSkinMesh->skinning->indices = {0, 0, 0, 0};
+  model.contactSkinMesh->skinning->weights = {1_r, 1_r, 1_r, 1_r};
+
+  ShapeHandle const shape = _mochiContext->CreateModelShape(model, ExpectOK{});
+  MeshDataView const meshView = _mochiContext->GetShapeMesh(shape, ExpectOK{});
+  MeshDataView const surfaceView = _mochiContext->GetShapeSurfaceMesh(shape, ExpectOK{});
+
+  EXPECT_EQ(2, meshView.nodesPerElement);
+  EXPECT_EQ(2, meshView.GetNumNodes());
+  EXPECT_EQ(3, surfaceView.nodesPerElement);
+  EXPECT_EQ(3, surfaceView.GetNumNodes());
+  EXPECT_SPAN_EQ(
+      MakeConstSpan(model.contactSkinMesh->coordinates).subspan(3), surfaceView.coordinates);
+  constexpr std::array kExpectedConnectivity = {0, 1, 2};
+  EXPECT_SPAN_EQ(MakeConstSpan(kExpectedConnectivity), surfaceView.connectivity);
+}
+
 // Verify GetShapeSurfaceMesh reports an error for a default-constructed (invalid) handle.
 TEST_P(MochiContextTest, GetShapeSurfaceMesh_InvalidHandle) {
   [[maybe_unused]] auto mesh = _mochiContext->GetShapeSurfaceMesh(ShapeHandle{}, ExpectNotOK{});

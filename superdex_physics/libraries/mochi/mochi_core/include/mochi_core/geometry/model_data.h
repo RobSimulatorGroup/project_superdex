@@ -196,7 +196,8 @@ struct ModelData {
   std::optional<MeshData> mesh;
   std::optional<MeshData> visualMesh;
   /**
-   * @brief Optional triangular contact surface embedded in the primary mesh.
+   * @brief Optional triangular mesh used for surface queries and, when selected as the rod's
+   * contact geometry, for contact quadrature.
    *
    * @details The skinning indices reference primary-mesh nodes for triangular and tetrahedral
    * meshes, and primary-mesh elements for polylines. Currently consumed only by rod actors.
