@@ -2533,6 +2533,13 @@ class ModelData:
     """
     mesh: Optional[MeshData]
     visual_mesh: Optional[MeshData]
+    contact_skin_mesh: Optional[MeshData]
+    """Optional triangular contact surface embedded in the primary mesh.
+
+    The skinning indices reference primary-mesh nodes for triangular and tetrahedral
+    meshes, and primary-mesh elements for polylines. Currently consumed only by rod
+    actors.
+    """
     @property
     def blending(self) -> Optional[DynamicArrayBlendingData]: ...
     @blending.setter
@@ -2564,6 +2571,7 @@ class ModelData:
         self,
         mesh: Optional[MeshData] = ...,
         visual_mesh: Optional[MeshData] = ...,
+        contact_skin_mesh: Optional[MeshData] = ...,
         blending: Optional[ArrayLikeBlendingData] = ...,
         constrained_nodes: Optional[ArrayLikeInt] = ...,
         element_frame_axes: Optional[ArrayLikeReal] = ...,
@@ -2591,6 +2599,13 @@ class ModelDataView:
     """
     mesh: Optional[MeshDataView]
     visual_mesh: Optional[MeshDataView]
+    contact_skin_mesh: Optional[MeshDataView]
+    """Optional triangular contact surface embedded in the primary mesh.
+
+    The skinning indices reference primary-mesh nodes for triangular and tetrahedral
+    meshes, and primary-mesh elements for polylines. Currently consumed only by rod
+    actors.
+    """
     @property
     def blending(self) -> Optional[DynamicArrayBlendingDataView]: ...
     @blending.setter
@@ -2622,6 +2637,7 @@ class ModelDataView:
         self,
         mesh: Optional[MeshDataView] = ...,
         visual_mesh: Optional[MeshDataView] = ...,
+        contact_skin_mesh: Optional[MeshDataView] = ...,
         blending: Optional[ArrayLikeBlendingDataView] = ...,
         constrained_nodes: Optional[ArrayLikeInt] = ...,
         element_frame_axes: Optional[ArrayLikeReal] = ...,
@@ -7207,8 +7223,8 @@ class ContactPoint:
     Note:
         Units depend on the dimensionality of the colliding manifold of
         :attr:`~superdex.physics.ContactPoint.actor_a`: [m²] for surface contact
-        (e.g., rigid, articulated, soft, shell, and rod actors with visual-mesh
-        contact enabled), or [m] for rod actors using centerline contact.
+        (e.g., rigid, articulated, soft, shell, and rod actors using visual-mesh or
+        contact-skin contact), or [m] for rod actors using centerline contact.
 
     Note:
         For surface contact, represents the surface area corresponding to the sample
@@ -8552,6 +8568,7 @@ def create_model_shape(model: ModelData) -> ShapeHandle:
 def create_model_shape(
     mesh: Optional[MeshData] = ...,
     visual_mesh: Optional[MeshData] = ...,
+    contact_skin_mesh: Optional[MeshData] = ...,
     blending: Optional[ArrayLikeBlendingData] = ...,
     constrained_nodes: Optional[ArrayLikeInt] = ...,
     element_frame_axes: Optional[ArrayLikeReal] = ...,

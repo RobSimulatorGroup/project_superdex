@@ -647,7 +647,9 @@ struct RodActorParams {
   PointCloudColliderParams pointCloudCollider = {};
   bool hasGravity = true;
   bool useVisualMeshContact = false;
+  bool useContactSkin = false;
   ActorBoundaryElementType visualMeshContactElementType = ActorBoundaryElementType::Default;
+  ActorBoundaryElementType contactSkinElementType = ActorBoundaryElementType::Default;
 
   MOCHI_STRUCT_BEGIN(mochi::experimental::RodActorParams)
   MOCHI_FIELD(name)
@@ -661,7 +663,9 @@ struct RodActorParams {
   MOCHI_FIELD(pointCloudCollider)
   MOCHI_FIELD(hasGravity)
   MOCHI_FIELD(useVisualMeshContact)
+  MOCHI_FIELD(useContactSkin)
   MOCHI_FIELD(visualMeshContactElementType)
+  MOCHI_FIELD(contactSkinElementType)
   MOCHI_STRUCT_END()
 };
 

@@ -1154,7 +1154,7 @@ TEST_F(DMapTest, SparseSkinning) {
 
   // Test composition DMap<DMapQuad<TriElement>, DMapSparseSkinning>.
   // This exercises the non-shared-DoF code path in DMapQuad::PropagateJacobianSlice,
-  // which is the production path for rod visual mesh contact.
+  // which is the production path for rod surface contact.
   auto addEpsAndMapQuad = [&](int i, real eps, Span<Real3 const> /*points*/, Span<Real3> out) {
     std::array<real, kNumDofs> perturbedState = state;
     perturbedState[i] += eps;

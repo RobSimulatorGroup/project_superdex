@@ -2434,6 +2434,8 @@ static std::shared_ptr<TetrahedralMeshShape const> CreateDuplicateShapeWithSkinn
       srcShape->GetMeshBlending(),
       srcShape->GetVisualMesh(),
       srcShape->GetVisualEmbedding(),
+      srcShape->GetContactSkin(),
+      srcShape->GetContactSkinEmbedding(),
       srcShape->GetGridSdf(),
       srcShape->GetRomData(), // Deep copy
       srcShape->GetSampleMeshes(), // Deep copy

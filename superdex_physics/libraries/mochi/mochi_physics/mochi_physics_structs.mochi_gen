@@ -1355,8 +1355,8 @@ struct ContactPoint {
   //
   // @note Units depend on the dimensionality of the colliding manifold of
   // @ref actorA: [m²] for surface contact (e.g., rigid, articulated, soft, shell,
-  // and rod actors with visual-mesh contact enabled), or [m] for rod actors using
-  // centerline contact.
+  // and rod actors using visual-mesh or contact-skin contact), or [m] for rod
+  // actors using centerline contact.
   // @note For surface contact, represents the surface area corresponding to the
   // sample point. For rod centerline contact, represents the arc length.
   // @note Useful for contact area/length estimation and other post-processing.

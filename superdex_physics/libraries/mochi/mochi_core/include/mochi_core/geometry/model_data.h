@@ -195,6 +195,13 @@ struct ModelData {
   // Mesh
   std::optional<MeshData> mesh;
   std::optional<MeshData> visualMesh;
+  /**
+   * @brief Optional triangular contact surface embedded in the primary mesh.
+   *
+   * @details The skinning indices reference primary-mesh nodes for triangular and tetrahedral
+   * meshes, and primary-mesh elements for polylines. Currently consumed only by rod actors.
+   */
+  std::optional<MeshData> contactSkinMesh;
   std::optional<DynamicArray<BlendingData>> blending;
 
   /** @brief Indices of mesh nodes that are constrained. */
@@ -237,6 +244,7 @@ struct ModelData {
   MOCHI_STRUCT_BEGIN(mochi::ModelData)
   MOCHI_FIELD(mesh)
   MOCHI_FIELD(visualMesh)
+  MOCHI_FIELD(contactSkinMesh)
   MOCHI_FIELD(blending)
   MOCHI_FIELD(constrainedNodes)
   MOCHI_FIELD(elementFrameAxes)
@@ -267,6 +275,8 @@ struct ModelDataView {
   // Mesh
   std::optional<MeshDataView> mesh;
   std::optional<MeshDataView> visualMesh;
+  /** @copydoc ModelData::contactSkinMesh */
+  std::optional<MeshDataView> contactSkinMesh;
   // DynamicArray needed here because blending is an array-of-structures.
   std::optional<DynamicArray<BlendingDataView>> blending;
 

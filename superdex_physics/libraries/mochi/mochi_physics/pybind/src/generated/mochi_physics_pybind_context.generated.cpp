@@ -315,10 +315,11 @@ void mochi::DefineMochiPhysics_MochiPhysicsContext([[maybe_unused]] py::module_&
       , py::arg("model")
       , "Create a shape using in-memory model data, so that it can be used to create\nactors.\n\nArgs:\n    model (ModelData): The model data, which SuperDex Physics copies.\n\nReturns:\n    A :class:`~superdex.physics.ShapeHandle` that can be used to create actors.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs.\n\nNote:\n    The shape remains in memory while referenced by any handle or actor. In the\n    C API, you must release the shape explicitly by calling\n    :func:`~superdex.physics.release_shape`. In C++ and Python, this is\n    optional, since :class:`~superdex.physics.ShapeHandle` cleanup is automatic.\n\nNote:\n    Call on any thread.\n\nNote:\n    Can be a mesh or an implicit shape, depending on the contents.\n\nSee Also:\n    :class:`~superdex.physics.ShapeHandle`,\n    :func:`~superdex.physics.release_shape`"
     );
-    m.def("create_model_shape", [](py::object mesh, py::object visual_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
+    m.def("create_model_shape", [](py::object mesh, py::object visual_mesh, py::object contact_skin_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
       mochi::ModelData params;
       params.mesh = py::cast<std::optional<mochi::MeshData>>(mesh);
       params.visualMesh = py::cast<std::optional<mochi::MeshData>>(visual_mesh);
+      params.contactSkinMesh = py::cast<std::optional<mochi::MeshData>>(contact_skin_mesh);
       params.blending = py::cast<std::optional<mochi::DynamicArray<mochi::BlendingData>>>(blending);
       params.constrainedNodes = py::cast<std::optional<mochi::DynamicArray<int>>>(constrained_nodes);
       params.elementFrameAxes = py::cast<std::optional<mochi::DynamicArray<mochi::real>>>(element_frame_axes);
@@ -338,6 +339,7 @@ void mochi::DefineMochiPhysics_MochiPhysicsContext([[maybe_unused]] py::module_&
       , py::kw_only()
       , py::arg("mesh") = mochi::ModelData{}.mesh
       , py::arg("visual_mesh") = mochi::ModelData{}.visualMesh
+      , py::arg("contact_skin_mesh") = mochi::ModelData{}.contactSkinMesh
       , py::arg("blending") = mochi::ModelData{}.blending
       , py::arg("constrained_nodes") = mochi::ModelData{}.constrainedNodes
       , py::arg("element_frame_axes") = mochi::ModelData{}.elementFrameAxes

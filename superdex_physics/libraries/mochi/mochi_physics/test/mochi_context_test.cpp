@@ -2538,6 +2538,53 @@ static ModelData CreateModelWithVisualMesh() {
   model.visualMesh->connectivity = Flatten(MakeSpan(triMesh.second));
   return model;
 }
+static void AddContactSkin(ModelData& model) {
+  MOCHI_ASSERT(model.mesh && model.visualMesh);
+  model.contactSkinMesh = *model.visualMesh;
+  model.contactSkinMesh->coordinates[0] += 0.125_r;
+  int const maxSkinningIndex = model.mesh->nodesPerElement == 2 ? model.mesh->GetNumNodes() - 2
+                                                                : model.mesh->GetNumNodes() - 1;
+  int const numContactNodes = model.contactSkinMesh->GetNumNodes();
+  model.contactSkinMesh->skinning.emplace();
+  model.contactSkinMesh->skinning->weightsPerNode = 1;
+  model.contactSkinMesh->skinning->indices.resize_noinit(numContactNodes);
+  model.contactSkinMesh->skinning->weights.resize(numContactNodes, 1_r);
+  for (int i = 0; i < numContactNodes; ++i) {
+    model.contactSkinMesh->skinning->indices[i] = Min(i, maxSkinningIndex);
+  }
+}
+
+static void ExpectAuxiliaryMeshesRoundTrip(Context* context, ModelData const& expected) {
+  ShapeHandle shape = context->CreateModelShape(expected, ExpectOK{});
+  auto const shapePtr = assert_cast<ContextImpl*>(context)->GetShapeSharedPtr(shape);
+  ASSERT_NE(shapePtr, nullptr);
+  ModelData const actual = shapePtr->GetModelData(ExpectOK{});
+
+  EXPECT_EQ(expected.visualMesh, actual.visualMesh);
+  EXPECT_EQ(expected.contactSkinMesh, actual.contactSkinMesh);
+
+  auto roundTrippedShape = ContextImpl::CreateShapeFromModelData(ModelData{actual}, ExpectOK{});
+  ASSERT_NE(roundTrippedShape, nullptr);
+  ModelData const roundTripped = roundTrippedShape->GetModelData(ExpectOK{});
+  EXPECT_EQ(expected.visualMesh, roundTripped.visualMesh);
+  EXPECT_EQ(expected.contactSkinMesh, roundTripped.contactSkinMesh);
+}
+
+TEST_P(MochiContextTest, GetModelData_PreservesTetAndTriAuxiliaryMeshes) {
+  for (bool includeContactSkinning : {false, true}) {
+    for (bool useTrianglePrimaryMesh : {false, true}) {
+      ModelData model = CreateModelWithVisualMesh();
+      if (useTrianglePrimaryMesh) {
+        model.mesh = model.visualMesh;
+      }
+      AddContactSkin(model);
+      if (!includeContactSkinning) {
+        model.contactSkinMesh->skinning.reset();
+      }
+      ExpectAuxiliaryMeshesRoundTrip(_mochiContext, model);
+    }
+  }
+}
 
 // Verify GetShapeVisualMesh returns correct visual mesh dimensions from a ModelData shape.
 TEST_P(MochiContextTest, GetShapeVisualMesh_WithVisualMesh) {
@@ -2651,6 +2698,16 @@ static ModelData CreatePolylineModelWithVisualMesh(bool includeSkinning = true) 
   }
 
   return model;
+}
+TEST_P(MochiContextTest, GetModelData_PreservesPolylineAuxiliaryMeshes) {
+  for (bool includeContactSkinning : {false, true}) {
+    ModelData model = CreatePolylineModelWithVisualMesh();
+    AddContactSkin(model);
+    if (!includeContactSkinning) {
+      model.contactSkinMesh->skinning.reset();
+    }
+    ExpectAuxiliaryMeshesRoundTrip(_mochiContext, model);
+  }
 }
 
 // Verify GetShapeVisualMesh returns correct visual mesh dimensions for a polyline shape.

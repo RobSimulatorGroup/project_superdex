@@ -312,6 +312,11 @@ struct ModelData [from_mochi_core, no_capi, equality] {
   # Mesh
   Optional<MeshData> mesh;
   Optional<MeshData> visualMesh;
+  // @brief Optional triangular contact surface embedded in the primary mesh.
+  //
+  // @details The skinning indices reference primary-mesh nodes for triangular and tetrahedral
+  // meshes, and primary-mesh elements for polylines. Currently consumed only by rod actors.
+  Optional<MeshData> contactSkinMesh;
   Optional<DynamicArray<BlendingData>> blending;
   // @brief Indices of mesh nodes that are constrained.
   Optional<DynamicArray<int>> constrainedNodes;
@@ -348,6 +353,11 @@ struct ModelDataView [from_mochi_core, no_capi, equality] {
   # Mesh
   Optional<MeshDataView> mesh;
   Optional<MeshDataView> visualMesh;
+  // @brief Optional triangular contact surface embedded in the primary mesh.
+  //
+  // @details The skinning indices reference primary-mesh nodes for triangular and tetrahedral
+  // meshes, and primary-mesh elements for polylines. Currently consumed only by rod actors.
+  Optional<MeshDataView> contactSkinMesh;
   Optional<DynamicArray<BlendingDataView>> blending;
   // @brief Indices of mesh nodes that are constrained.
   Optional<Span<int const>> constrainedNodes;

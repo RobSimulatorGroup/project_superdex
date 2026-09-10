@@ -393,7 +393,7 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
   ;
 
   registry.GetClass<mochi::experimental::RodActorParams>()
-    .def(py::init([](py::object name, py::object layer, py::object world_from_local, py::object shape, py::object contact, py::object contact_element_type, py::object material, py::object collider_type, py::object point_cloud_collider, py::object has_gravity, py::object use_visual_mesh_contact, py::object visual_mesh_contact_element_type) {
+    .def(py::init([](py::object name, py::object layer, py::object world_from_local, py::object shape, py::object contact, py::object contact_element_type, py::object material, py::object collider_type, py::object point_cloud_collider, py::object has_gravity, py::object use_visual_mesh_contact, py::object use_contact_skin, py::object visual_mesh_contact_element_type, py::object contact_skin_element_type) {
       mochi::experimental::RodActorParams result;
       result.name = py::cast<mochi::DynamicString>(name);
       result.layer = py::cast<mochi::DynamicString>(layer);
@@ -406,7 +406,9 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
       result.pointCloudCollider = py::cast<mochi::experimental::PointCloudColliderParams>(point_cloud_collider);
       result.hasGravity = py::cast<bool>(has_gravity);
       result.useVisualMeshContact = py::cast<bool>(use_visual_mesh_contact);
+      result.useContactSkin = py::cast<bool>(use_contact_skin);
       result.visualMeshContactElementType = py::cast<mochi::ActorBoundaryElementType>(visual_mesh_contact_element_type);
+      result.contactSkinElementType = py::cast<mochi::ActorBoundaryElementType>(contact_skin_element_type);
       return result;
     })
       , py::kw_only()
@@ -421,7 +423,9 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
       , py::arg("point_cloud_collider") = mochi::experimental::RodActorParams{}.pointCloudCollider
       , py::arg("has_gravity") = mochi::experimental::RodActorParams{}.hasGravity
       , py::arg("use_visual_mesh_contact") = mochi::experimental::RodActorParams{}.useVisualMeshContact
+      , py::arg("use_contact_skin") = mochi::experimental::RodActorParams{}.useContactSkin
       , py::arg("visual_mesh_contact_element_type") = mochi::experimental::RodActorParams{}.visualMeshContactElementType
+      , py::arg("contact_skin_element_type") = mochi::experimental::RodActorParams{}.contactSkinElementType
     )
     .def(py::init<>())
     .def("__copy__", [](mochi::experimental::RodActorParams const& self) { return mochi::experimental::RodActorParams(self); })
@@ -429,15 +433,17 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
     .def_readwrite("name", &mochi::experimental::RodActorParams::name, "Actor name.")
     .def_readwrite("layer", &mochi::experimental::RodActorParams::layer, "Contact layer name.")
     .def_readwrite("world_from_local", &mochi::experimental::RodActorParams::worldFromLocal, "World-from-local transform applied to the shape.")
-    .def_readwrite("shape", &mochi::experimental::RodActorParams::shape, "Shape handle defining the rod geometry. Must be a polyline shape.\n\nNote:\n    Each element's frame axis is interpreted as one cross-sectional principal\n    axis (the other is the cross product of the segment direction and that\n    axis); the flexural stiffness components are defined with respect to these\n    axes.\n\nNote:\n    A rod actor uses a visual mesh only when the shape has embedding data. For\n    shapes created from :class:`~superdex.physics.ModelData`, the embedding is\n    built from the skinning data in\n    :attr:`~superdex.physics.ModelData.visual_mesh`. Without visual-mesh\n    skinning, :func:`~superdex.physics.get_shape_visual_mesh` still returns the\n    shape's visual mesh, but the rod actor ignores it:\n    :meth:`~superdex.physics.Actor.get_visual_mesh` returns an empty view, and\n    :class:`VISUAL_NODE_POSITIONS <superdex.physics.QueryType>` and\n    :class:`VISUAL_NODE_NORMALS <superdex.physics.QueryType>` are unsupported.\n    Setting\n    :attr:`~superdex.physics.experimental.RodActorParams.use_visual_mesh_contact`\n    to true then causes actor creation to fail.")
+    .def_readwrite("shape", &mochi::experimental::RodActorParams::shape, "Shape handle defining the rod geometry. Must be a polyline shape.\n\nNote:\n    Each element's frame axis is interpreted as one cross-sectional principal\n    axis (the other is the cross product of the segment direction and that\n    axis); the flexural stiffness components are defined with respect to these\n    axes.\n\nNote:\n    A rod actor uses a visual mesh only when the shape has embedding data. For\n    shapes created from :class:`~superdex.physics.ModelData`, the embedding is\n    built from the skinning data in\n    :attr:`~superdex.physics.ModelData.visual_mesh`. Without visual-mesh\n    skinning, :func:`~superdex.physics.get_shape_visual_mesh` still returns the\n    shape's visual mesh, but the rod actor ignores it:\n    :meth:`~superdex.physics.Actor.get_visual_mesh` returns an empty view, and\n    :class:`VISUAL_NODE_POSITIONS <superdex.physics.QueryType>` and\n    :class:`VISUAL_NODE_NORMALS <superdex.physics.QueryType>` are unsupported.\n    Setting\n    :attr:`~superdex.physics.experimental.RodActorParams.use_visual_mesh_contact`\n    to true then causes actor creation to fail.\n\nNote:\n    Setting\n    :attr:`~superdex.physics.experimental.RodActorParams.use_contact_skin` to\n    true requires :attr:`~superdex.physics.ModelData.contact_skin_mesh` and its\n    skinning data.")
     .def_readwrite("contact", &mochi::experimental::RodActorParams::contact, "Contact properties for interactions with volume actors.")
     .def_readwrite("contact_element_type", &mochi::experimental::RodActorParams::contactElementType, "Element type controlling the number of contact samples per segment.")
     .def_readwrite("material", &mochi::experimental::RodActorParams::material, "Rod material properties.")
     .def_readwrite("collider_type", &mochi::experimental::RodActorParams::colliderType, "Collider type. Set to PointCloud to enable point-cloud contact.")
     .def_readwrite("point_cloud_collider", &mochi::experimental::RodActorParams::pointCloudCollider, "Geometric and logical properties of the point-cloud collider.")
     .def_readwrite("has_gravity", &mochi::experimental::RodActorParams::hasGravity, "Enables gravity.")
-    .def_readwrite("use_visual_mesh_contact", &mochi::experimental::RodActorParams::useVisualMeshContact, "Places contact samples on the rod's visual (triangular) mesh instead of the\ncenterline.\n\nNote:\n    Forces are transmitted to rod degrees of freedom through the skinning\n    Jacobian. Requires the rod shape to have a visual mesh with embedding data.")
-    .def_readwrite("visual_mesh_contact_element_type", &mochi::experimental::RodActorParams::visualMeshContactElementType, "Element type controlling the number of visual-mesh contact samples per triangle.\nOnly used when visual-mesh contact is enabled.")
+    .def_readwrite("use_visual_mesh_contact", &mochi::experimental::RodActorParams::useVisualMeshContact, "Use the rod shape's visual mesh for contact instead of its centerline.\n\nActor creation fails if this and\n:attr:`~superdex.physics.experimental.RodActorParams.use_contact_skin` are both\ntrue, or if the shape does not have a visual mesh with rod embedding data.")
+    .def_readwrite("use_contact_skin", &mochi::experimental::RodActorParams::useContactSkin, "Use the rod shape's contact skin for contact instead of its centerline.\n\nActor creation fails if this and\n:attr:`~superdex.physics.experimental.RodActorParams.use_visual_mesh_contact`\nare both true, or if the shape does not have a contact skin with rod embedding\ndata.")
+    .def_readwrite("visual_mesh_contact_element_type", &mochi::experimental::RodActorParams::visualMeshContactElementType, "Triangle element type for visual-mesh contact quadrature.\n\nNote:\n    :attr:`~superdex.physics.experimental.RodActorParams.contact_element_type`\n    controls centerline sampling instead.")
+    .def_readwrite("contact_skin_element_type", &mochi::experimental::RodActorParams::contactSkinElementType, "Triangle element type for contact-skin quadrature.\n\nNote:\n    :attr:`~superdex.physics.experimental.RodActorParams.contact_element_type`\n    controls centerline sampling instead.")
   ;
 
   registry.GetClass<mochi::experimental::ShellMaterialParams>()

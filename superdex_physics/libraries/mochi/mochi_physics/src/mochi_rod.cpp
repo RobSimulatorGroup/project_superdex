@@ -1220,10 +1220,21 @@ void mochi::InitRodActor(
   auto const& visualMesh = shapePtr->GetVisualMesh();
   auto const& visualEmbedding = shapePtr->GetRodVisualEmbedding();
   bool const hasUsableVisualMesh = visualMesh && visualEmbedding;
+  auto const& shapeContactSkinMesh = shapePtr->GetContactSkin();
+  auto const& shapeContactSkinEmbedding = shapePtr->GetRodContactSkinEmbedding();
+  bool const hasUsableContactSkin = shapeContactSkinMesh && shapeContactSkinEmbedding;
+  MOCHI_ERROR_IF(
+      params.useVisualMeshContact && params.useContactSkin,
+      error,
+      "useVisualMeshContact and useContactSkin cannot both be true.");
   MOCHI_ERROR_IF(
       params.useVisualMeshContact && !hasUsableVisualMesh,
       error,
       "useVisualMeshContact requires a rod shape with visual mesh and embedding data.");
+  MOCHI_ERROR_IF(
+      params.useContactSkin && !hasUsableContactSkin,
+      error,
+      "useContactSkin requires a rod shape with contact skin and embedding data.");
   MOCHI_ERROR_RETURN(error);
 
   // Get nodes and element frame axes from the shape
@@ -1348,15 +1359,20 @@ void mochi::InitRodActor(
 
   std::shared_ptr<TriangularMesh const> contactSkinMesh;
   std::shared_ptr<RodSurfaceEmbeddingData const> contactSkinEmbedding;
+  ActorBoundaryElementType surfaceContactElementType = ActorBoundaryElementType::Default;
   if (params.useVisualMeshContact) {
     contactSkinMesh = visualMesh;
     contactSkinEmbedding = visualEmbedding;
+    surfaceContactElementType = params.visualMeshContactElementType;
+  } else if (params.useContactSkin) {
+    contactSkinMesh = shapeContactSkinMesh;
+    contactSkinEmbedding = shapeContactSkinEmbedding;
+    surfaceContactElementType = params.contactSkinElementType;
   }
 
   if (contactSkinMesh) {
     auto const& surfaceDisc = reg.emplace<CFemSurfaceDiscretization>(
-        e,
-        CFemSurfaceDiscretization::Create(params.visualMeshContactElementType, *contactSkinMesh));
+        e, CFemSurfaceDiscretization::Create(surfaceContactElementType, *contactSkinMesh));
     numCollidingSamples = surfaceDisc.GetNumQuadPoints();
 
     auto& contactSkin =

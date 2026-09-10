@@ -703,10 +703,11 @@ void mochi::DefineMochiCore_MochiCore([[maybe_unused]] py::module_& m, [[maybe_u
   ;
 
   registry.GetClass<mochi::ModelData>()
-    .def(py::init([](py::object mesh, py::object visual_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
+    .def(py::init([](py::object mesh, py::object visual_mesh, py::object contact_skin_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
       mochi::ModelData result;
       result.mesh = py::cast<std::optional<mochi::MeshData>>(mesh);
       result.visualMesh = py::cast<std::optional<mochi::MeshData>>(visual_mesh);
+      result.contactSkinMesh = py::cast<std::optional<mochi::MeshData>>(contact_skin_mesh);
       result.blending = py::cast<std::optional<mochi::DynamicArray<mochi::BlendingData>>>(blending);
       result.constrainedNodes = py::cast<std::optional<mochi::DynamicArray<int>>>(constrained_nodes);
       result.elementFrameAxes = py::cast<std::optional<mochi::DynamicArray<mochi::real>>>(element_frame_axes);
@@ -720,6 +721,7 @@ void mochi::DefineMochiCore_MochiCore([[maybe_unused]] py::module_& m, [[maybe_u
       , py::kw_only()
       , py::arg("mesh") = mochi::ModelData{}.mesh
       , py::arg("visual_mesh") = mochi::ModelData{}.visualMesh
+      , py::arg("contact_skin_mesh") = mochi::ModelData{}.contactSkinMesh
       , py::arg("blending") = mochi::ModelData{}.blending
       , py::arg("constrained_nodes") = mochi::ModelData{}.constrainedNodes
       , py::arg("element_frame_axes") = mochi::ModelData{}.elementFrameAxes
@@ -736,6 +738,7 @@ void mochi::DefineMochiCore_MochiCore([[maybe_unused]] py::module_& m, [[maybe_u
     .def("__deepcopy__", [](mochi::ModelData const& self, py::dict) { return mochi::ModelData(self); })
     .def_readwrite("mesh", &mochi::ModelData::mesh)
     .def_readwrite("visual_mesh", &mochi::ModelData::visualMesh)
+    .def_readwrite("contact_skin_mesh", &mochi::ModelData::contactSkinMesh, "Optional triangular contact surface embedded in the primary mesh.\n\nThe skinning indices reference primary-mesh nodes for triangular and tetrahedral\nmeshes, and primary-mesh elements for polylines. Currently consumed only by rod\nactors.")
     .def_property("blending", [](mochi::ModelData& self) -> std::optional<mochi::DynamicArray<mochi::BlendingData>>& { return self.blending; }, [](mochi::ModelData& self, py::object val) { self.blending = py::cast<std::optional<mochi::DynamicArray<mochi::BlendingData>>>(val); }, py::return_value_policy::reference_internal)
     .def_property("constrained_nodes", [](mochi::ModelData& self) -> std::optional<mochi::DynamicArray<int>>& { return self.constrainedNodes; }, [](mochi::ModelData& self, py::object val) { self.constrainedNodes = py::cast<std::optional<mochi::DynamicArray<int>>>(val); }, py::return_value_policy::reference_internal, "Indices of mesh nodes that are constrained.")
     .def_property("element_frame_axes", [](mochi::ModelData& self) -> std::optional<mochi::DynamicArray<mochi::real>>& { return self.elementFrameAxes; }, [](mochi::ModelData& self, py::object val) { self.elementFrameAxes = py::cast<std::optional<mochi::DynamicArray<mochi::real>>>(val); }, py::return_value_policy::reference_internal, "Per-element reference frame axes for polyline meshes.\n\nFlat array of unit vectors (3 reals per element), each orthogonal to its\nelement's tangent. Only valid when the mesh is a polyline with\n:attr:`~superdex.physics.MeshData.nodes_per_element` equal to 2.")
@@ -751,10 +754,11 @@ void mochi::DefineMochiCore_MochiCore([[maybe_unused]] py::module_& m, [[maybe_u
   ;
 
   registry.GetClass<mochi::ModelDataView>()
-    .def(py::init([](py::object mesh, py::object visual_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
+    .def(py::init([](py::object mesh, py::object visual_mesh, py::object contact_skin_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
       mochi::ModelDataView result;
       result.mesh = py::cast<std::optional<mochi::MeshDataView>>(mesh);
       result.visualMesh = py::cast<std::optional<mochi::MeshDataView>>(visual_mesh);
+      result.contactSkinMesh = py::cast<std::optional<mochi::MeshDataView>>(contact_skin_mesh);
       result.blending = py::cast<std::optional<mochi::DynamicArray<mochi::BlendingDataView>>>(blending);
       result.constrainedNodes = py::cast<std::optional<mochi::Span<int const>>>(constrained_nodes);
       result.elementFrameAxes = py::cast<std::optional<mochi::Span<mochi::real const>>>(element_frame_axes);
@@ -768,6 +772,7 @@ void mochi::DefineMochiCore_MochiCore([[maybe_unused]] py::module_& m, [[maybe_u
       , py::kw_only()
       , py::arg("mesh") = mochi::ModelDataView{}.mesh
       , py::arg("visual_mesh") = mochi::ModelDataView{}.visualMesh
+      , py::arg("contact_skin_mesh") = mochi::ModelDataView{}.contactSkinMesh
       , py::arg("blending") = mochi::ModelDataView{}.blending
       , py::arg("constrained_nodes") = mochi::ModelDataView{}.constrainedNodes
       , py::arg("element_frame_axes") = mochi::ModelDataView{}.elementFrameAxes
@@ -784,6 +789,7 @@ void mochi::DefineMochiCore_MochiCore([[maybe_unused]] py::module_& m, [[maybe_u
     .def("__deepcopy__", [](mochi::ModelDataView const&, py::dict) { throw py::type_error("ModelDataView cannot be copied because it contains non-owning members (Span, StringView, or pointer). Shallow copy is not currently allowed either, to prevent mistakes."); })
     .def_readwrite("mesh", &mochi::ModelDataView::mesh)
     .def_readwrite("visual_mesh", &mochi::ModelDataView::visualMesh)
+    .def_readwrite("contact_skin_mesh", &mochi::ModelDataView::contactSkinMesh, "Optional triangular contact surface embedded in the primary mesh.\n\nThe skinning indices reference primary-mesh nodes for triangular and tetrahedral\nmeshes, and primary-mesh elements for polylines. Currently consumed only by rod\nactors.")
     .def_property("blending", [](mochi::ModelDataView& self) -> std::optional<mochi::DynamicArray<mochi::BlendingDataView>>& { return self.blending; }, [](mochi::ModelDataView& self, py::object val) { self.blending = py::cast<std::optional<mochi::DynamicArray<mochi::BlendingDataView>>>(val); }, py::return_value_policy::reference_internal)
     .def_property("constrained_nodes", [](mochi::ModelDataView& self) -> std::optional<mochi::Span<int const>>& { return self.constrainedNodes; }, [](mochi::ModelDataView& self, py::object val) { self.constrainedNodes = py::cast<std::optional<mochi::Span<int const>>>(val); }, py::return_value_policy::reference_internal, "Indices of mesh nodes that are constrained.")
     .def_property("element_frame_axes", [](mochi::ModelDataView& self) -> std::optional<mochi::Span<mochi::real const>>& { return self.elementFrameAxes; }, [](mochi::ModelDataView& self, py::object val) { self.elementFrameAxes = py::cast<std::optional<mochi::Span<mochi::real const>>>(val); }, py::return_value_policy::reference_internal, "Per-element reference frame axes for polyline meshes.\n\nFlat array of unit vectors (3 reals per element), each orthogonal to its\nelement's tangent. Only valid when the mesh is a polyline with\n:attr:`~superdex.physics.MeshDataView.nodes_per_element` equal to 2.")
