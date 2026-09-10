@@ -66,7 +66,7 @@ static constexpr real kDResRegularizationCoefficient = 1e-6_r;
  * Pipeline to resolve current skinning displacements for all nodes, including inactive nodes when
  * subsampling is enabled.
  */
-static void ResolveAllNodeSkinningDisplacementsPipeline(
+static void ArticulatedResolveAllNodeSkinningDisplacementsPipeline(
     entt::registry& reg,
     Span<entt::entity const> entities) {
   MOCHI_PROFILE_SCOPE();
@@ -142,23 +142,25 @@ static void SetFullPoseFromReducedPose(
       outFullPose.value);
 }
 
-// Recompute state derived from the reduced-pose except skinning: full/joint/link transforms,
-// (optional) the internal rigid links' state and root transforms, and the Jacobian. Assumes
-// CArticulatedReducedPose<Current> is already set. Shared by all external state-setting paths
-// (set-pose, set-link-transforms, init, and the post-restore fixup) so they update exactly the same
-// derived state. The post-restore fixup does not update links as they are state-captured.
-template <bool kUpdateLinks>
+// Recompute state derived from the reduced-pose: full/joint/link transforms, the internal rigid
+// links' state and root transforms, the Jacobian, skinning and blending. Assumes the current pose
+// is already set. Shared by all external state-setting paths (set-pose, set-link-transforms, init,
+// and the post-restore fixup) so they update exactly the same derived state.
 static void UpdateDerivedStateFromPose(
     entt::registry& reg,
     entt::entity e,
     ecs::RequiredTag<TagArticulatedActor>,
-    [[maybe_unused]] CGroupMembers const& members) {
+    CGroupMembers const& members,
+    CBlendedComposition const* composition) {
   ecs::InvokeOnEntity(&SetFullPoseFromReducedPose, reg, e);
-  if constexpr (kUpdateLinks) {
-    ecs::InvokeForEach(&articulated::rigid::EntitySetSolution, reg, members.actors);
-    ecs::InvokeForEach(&mochi::rigid::ComputeRootTransformCurrent, reg, members.actors);
-  }
+  ecs::InvokeForEach(&articulated::rigid::EntitySetSolution, reg, members.actors);
+  ecs::InvokeForEach(&mochi::rigid::ComputeRootTransformCurrent, reg, members.actors);
   ecs::InvokeOnEntity(&articulated::compound::UpdateJacobianState<TimeStep::Current>, reg, e);
+  ArticulatedResolveAllNodeSkinningDisplacementsPipeline(reg, MakeSingletonConstSpan(e));
+  if (composition) {
+    skinned::ResolveAllNodeSkinningDisplacementsPipeline(reg, MakeConstSpan(composition->soft));
+    blended::ResolveAllNodeBlendingDisplacementsPipeline(reg, MakeSingletonConstSpan(e));
+  }
 }
 
 static void SynchronizeAfterExternalPoseChange(entt::registry& reg, entt::entity e) {
@@ -166,19 +168,13 @@ static void SynchronizeAfterExternalPoseChange(entt::registry& reg, entt::entity
       reg.all_of<TagArticulatedActor>(e),
       "SynchronizeAfterExternalPoseChange requires an articulated actor.");
 
-  ecs::InvokeOnEntity<ecs::policy::AllowFullRegistryAccess>(
-      UpdateDerivedStateFromPose</*kUpdateLinks*/ true>, reg, e);
-  ResolveAllNodeSkinningDisplacementsPipeline(reg, MakeSingletonConstSpan(e));
+  ecs::InvokeOnEntity<ecs::policy::AllowFullRegistryAccess>(UpdateDerivedStateFromPose, reg, e);
 
   if (auto const* composition = reg.try_get<CBlendedComposition const>(e)) {
-    skinned::ResolveAllNodeSkinningDisplacementsPipeline(reg, MakeConstSpan(composition->soft));
-    blended::ResolveAllNodeBlendingDisplacementsPipeline(reg, MakeSingletonConstSpan(e));
-
     for (auto const soft : composition->soft) {
       InvalidateActorStepHistory(reg, soft);
     }
   }
-
   for (auto const link : reg.get<CGroupMembers const>(e).actors) {
     InvalidateActorStepHistory(reg, link);
   }
@@ -1710,15 +1706,9 @@ void mochi::articulated::compound::InitArticulatedBodyActor(
   articulated::ConvertDofsToPose(joints->jointTypes, joints->dofInfo, poseInfo, zeroDofs, pose);
   reg.get<CArticulatedReducedPose<TimeStep::Previous>>(e).value = pose;
 
-  // Recompute all pose-derived state (transforms, link states, Jacobian) from the reduced pose.
-  ecs::InvokeOnEntity<ecs::policy::AllowFullRegistryAccess>(
-      UpdateDerivedStateFromPose</*kUpdateLinks*/ true>, reg, e);
-
-  // Resolve skinning so the skinned displacements reflect the actual skeleton pose rather than the
-  // rest mesh.
-  if (skinMeshShape) {
-    ResolveAllNodeSkinningDisplacementsPipeline(reg, MakeSingletonConstSpan(e));
-  }
+  // Recompute all pose-derived state (transforms, link states, Jacobian, skinning) from the reduced
+  // pose.
+  ecs::InvokeOnEntity<ecs::policy::AllowFullRegistryAccess>(UpdateDerivedStateFromPose, reg, e);
 
   // Initialize the velocity to specified values or zero otherwise.
   if (params.jointVelocities.has_value() && !params.jointVelocities->empty()) {
@@ -3433,9 +3423,9 @@ void InitializeOnce(entt::registry& reg) {
   ecs::RegisterComponent<CIntegrationArticulatedJointVels>(reg);
   ecs::RegisterComponent<CTransmissions>(reg);
 
-  // Post-restore fixup: update derived state but not links, as they are state-captured.
+  // Post-restore fixup: update derived state.
   capture::RegisterPostRestoreSystem<ecs::policy::AllowFullRegistryAccess>(
-      &UpdateDerivedStateFromPose</*kUpdateLinks*/ false>, reg);
+      &UpdateDerivedStateFromPose, reg);
 }
 
 real GetActorMass(entt::registry const& reg, entt::entity actor) {
