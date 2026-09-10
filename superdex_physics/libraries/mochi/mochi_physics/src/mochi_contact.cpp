@@ -34,6 +34,7 @@
 #include "mochi_soft_rom_systems.h"
 #include "mochi_soft_skinned.h"
 
+#include <mochi_core/geometry/batch_sphere.h>
 #include <mochi_core/geometry/geometry_utils.h>
 #include <mochi_core/geometry/grid_sdf.h>
 #include <mochi_core/memory/filo_allocator.h>
@@ -795,8 +796,8 @@ template <TimeStep kTimeStep, bool kAllowFarSdfQuery>
   // introduced in the future.
   if (contactSamples.bsh && IsFinite(farSdfDistance)) {
     MOCHI_ASSERT(
-        outPositionsToQuery.size() == contactSamples.bsh->NumSamplePoints(),
-        "Inconsistent number of sample points. Is the BVH tree up-to-date with the number of active sample points?");
+        outPositionsToQuery.size() == contactSamples.bsh->GetNumSamples(),
+        "Inconsistent number of sample points. Is the SphereTree tree up-to-date with the number of active sample points?");
 
     AnyBoundingVolume colliderBvForCulling;
     bool shouldCull = true;
@@ -854,7 +855,12 @@ template <TimeStep kTimeStep, bool kAllowFarSdfQuery>
     // Perform culling.
     if (shouldCull) {
       culledIndicesBuffer.reserve(outPositionsToQuery.size());
-      contactSamples.bsh->FindIntersectingSamples(colliderBvForCulling, culledIndicesBuffer);
+
+      std::visit(
+          [&](auto const& bv) {
+            contactSamples.bsh->FindIntersectingSamples(bv, culledIndicesBuffer);
+          },
+          colliderBvForCulling);
 
       // Store culled positions and make 'outPositionsToQuery' point to them.
       culledPositionsBuffer.reserve(culledIndicesBuffer.size());
@@ -2420,9 +2426,11 @@ void mochi::UpdateCollisionSamplePositionsImpl(
     });
   });
 
-  if (outSamples.bsh) {
-    outSamples.bsh->Refit();
-  }
+  MOCHI_ASSERT(
+      !outSamples.bsh.has_value(),
+      "SphereOctTree does not currently support refitting. You could rebuild the tree from scratch, "
+      "or add a Refit method, but the best solution probably involves a different data structure "
+      "(e.g. an AABB tree).");
 }
 
 #define MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES_IMPL(activeFaces, discretization, numFields)     \
