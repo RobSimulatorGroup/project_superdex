@@ -3561,7 +3561,7 @@
 ///
 /// @brief Quadrature integration weight of the sample point on the colliding manifold of @ref mochi::ContactPoint::actorA "actorA".
 ///
-/// @note Units depend on the dimensionality of the colliding manifold of @ref mochi::ContactPoint::actorA "actorA": [m²] for surface contact (e.g., rigid, articulated, soft, shell, and rod actors using visual-mesh or contact-skin contact), or [m] for rod actors using centerline contact.
+/// @note Units depend on the dimensionality of the colliding manifold of @ref mochi::ContactPoint::actorA "actorA": [m²] for surface contact (e.g., rigid, articulated, soft, shell, and rod actors using contact-skin contact), or [m] for rod actors using centerline contact.
 /// @note For surface contact, represents the surface area corresponding to the sample point. For rod centerline contact, represents the arc length.
 /// @note Useful for contact area/length estimation and other post-processing.
 /// @note @ref mochi::ContactPoint::force "force" is already weighted by this value.

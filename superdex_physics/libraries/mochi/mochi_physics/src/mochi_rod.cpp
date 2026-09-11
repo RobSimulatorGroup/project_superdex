@@ -930,7 +930,7 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
 
   // Compute a discrete Bishop frame for twist-free cross-section orientation. Note that these axes
   // are intentionally independent of the rod's material frame axes, to minimize distortion of the
-  // tubular visual mesh in the reference configuration, even if the material frame axes have some
+  // tubular contact skin in the reference configuration, even if the material frame axes have some
   // nontrivial twist.
   DynamicArray<Real3> const bishopAxes = GenerateDiscreteBishopFrame(nodes, isClosedLoop);
 
@@ -941,9 +941,9 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
   if (isClosedLoop) {
     // Closed loop: one ring per element midpoint, no boundary rings, no end caps.
     int const numRings = numElements;
-    int const numVisualNodes = numCrossSectionSegments * numRings;
-    DynamicArray<real> visNodePositions;
-    visNodePositions.reserve(3 * numVisualNodes);
+    int const numSurfaceNodes = numCrossSectionSegments * numRings;
+    DynamicArray<real> surfaceNodePositions;
+    surfaceNodePositions.reserve(3 * numSurfaceNodes);
     real const invSeg = 1_r / static_cast<real>(numCrossSectionSegments);
     for (int r = 0; r < numRings; ++r) {
       Int2 const en = {r, (r + 1) % numNodes};
@@ -953,11 +953,11 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
       for (int s = 0; s < numCrossSectionSegments; ++s) {
         real const angle = 2_r * kPI * static_cast<real>(s) * invSeg;
         Real3 const pos = center + radius * (Cos(angle) * bishopAxes[r] + Sin(angle) * binormal);
-        visNodePositions.append(MakeConstSpan(pos));
+        surfaceNodePositions.append(MakeConstSpan(pos));
       }
     }
-    DynamicArray<int> visTriangles;
-    visTriangles.reserve(3 * 2 * numCrossSectionSegments * numRings);
+    DynamicArray<int> surfaceTriangles;
+    surfaceTriangles.reserve(3 * 2 * numCrossSectionSegments * numRings);
     for (int i = 0; i < numRings; ++i) {
       int const nextRing = (i + 1) % numRings;
       for (int c = 0; c < numCrossSectionSegments; ++c) {
@@ -967,20 +967,20 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
         int const v10 = nextRing * numCrossSectionSegments + c;
         int const v11 = nextRing * numCrossSectionSegments + c1;
         Int3 const tri0{v00, v01, v11};
-        visTriangles.append(MakeConstSpan(tri0));
+        surfaceTriangles.append(MakeConstSpan(tri0));
         Int3 const tri1{v00, v11, v10};
-        visTriangles.append(MakeConstSpan(tri1));
+        surfaceTriangles.append(MakeConstSpan(tri1));
       }
     }
     int constexpr kWeightsPerNode = 1;
     DynamicArray<int> embeddingElementIndices;
-    embeddingElementIndices.reserve(kWeightsPerNode * numVisualNodes);
+    embeddingElementIndices.reserve(kWeightsPerNode * numSurfaceNodes);
     for (int r = 0; r < numRings; ++r) {
       for (int s = 0; s < numCrossSectionSegments; ++s) {
         embeddingElementIndices.push_back(r);
       }
     }
-    DynamicArray<real> embeddingWeights(numVisualNodes, 1_r);
+    DynamicArray<real> embeddingWeights(numSurfaceNodes, 1_r);
     ModelData model;
     model.mesh.emplace(MeshData{});
     model.mesh->nodesPerElement = 2;
@@ -988,14 +988,14 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
     // Closed-loop polyline: connectivity must include the wrap-around segment.
     model.mesh->connectivity = MakeSequentialPolylineConnectivity(numNodes, /*isClosedLoop=*/true);
     model.elementFrameAxes = Flatten(frameAxes);
-    model.visualMesh.emplace(MeshData{});
-    model.visualMesh->nodesPerElement = 3;
-    model.visualMesh->coordinates = std::move(visNodePositions);
-    model.visualMesh->connectivity = std::move(visTriangles);
-    model.visualMesh->skinning.emplace(SkinningData{});
-    model.visualMesh->skinning->weightsPerNode = kWeightsPerNode;
-    model.visualMesh->skinning->indices = std::move(embeddingElementIndices);
-    model.visualMesh->skinning->weights = std::move(embeddingWeights);
+    model.contactSkinMesh.emplace(MeshData{});
+    model.contactSkinMesh->nodesPerElement = 3;
+    model.contactSkinMesh->coordinates = std::move(surfaceNodePositions);
+    model.contactSkinMesh->connectivity = std::move(surfaceTriangles);
+    model.contactSkinMesh->skinning.emplace(SkinningData{});
+    model.contactSkinMesh->skinning->weightsPerNode = kWeightsPerNode;
+    model.contactSkinMesh->skinning->indices = std::move(embeddingElementIndices);
+    model.contactSkinMesh->skinning->weights = std::move(embeddingWeights);
     return model;
   }
 
@@ -1015,10 +1015,10 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
     ringB[r] = Cross(tangent, d);
   }
 
-  // Visual surface nodes: numCrossSectionSegments vertices per ring, plus 2 cap-center vertices
-  int const numVisualNodes = numCrossSectionSegments * numRings + 2;
-  DynamicArray<real> visNodePositions;
-  visNodePositions.reserve(3 * numVisualNodes);
+  // Surface nodes: numCrossSectionSegments vertices per ring, plus 2 cap-center vertices
+  int const numSurfaceNodes = numCrossSectionSegments * numRings + 2;
+  DynamicArray<real> surfaceNodePositions;
+  surfaceNodePositions.reserve(3 * numSurfaceNodes);
   real const invNumCrossSectionSegments = 1_r / static_cast<real>(numCrossSectionSegments);
   for (int r = 0; r < numRings; ++r) {
     Real3 center;
@@ -1032,16 +1032,16 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
     for (int s = 0; s < numCrossSectionSegments; ++s) {
       real const angle = 2_r * kPI * static_cast<real>(s) * invNumCrossSectionSegments;
       Real3 const pos = center + radius * (Cos(angle) * ringD[r] + Sin(angle) * ringB[r]);
-      visNodePositions.append(MakeConstSpan(pos));
+      surfaceNodePositions.append(MakeConstSpan(pos));
     }
   }
-  visNodePositions.append(MakeConstSpan(nodes[0]));
-  visNodePositions.append(MakeConstSpan(nodes[numNodes - 1]));
+  surfaceNodePositions.append(MakeConstSpan(nodes[0]));
+  surfaceNodePositions.append(MakeConstSpan(nodes[numNodes - 1]));
 
   // Triangles: quad strips between consecutive rings + triangle-fan end caps
   int const numQuadStrips = numRings - 1;
-  DynamicArray<int> visTriangles;
-  visTriangles.reserve(
+  DynamicArray<int> surfaceTriangles;
+  surfaceTriangles.reserve(
       3 * (2 * numCrossSectionSegments * numQuadStrips + 2 * numCrossSectionSegments));
   for (int i = 0; i < numQuadStrips; ++i) {
     for (int c = 0; c < numCrossSectionSegments; ++c) {
@@ -1051,9 +1051,9 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
       int const v10 = (i + 1) * numCrossSectionSegments + c;
       int const v11 = (i + 1) * numCrossSectionSegments + c1;
       Int3 const tri0{v00, v01, v11};
-      visTriangles.append(MakeConstSpan(tri0));
+      surfaceTriangles.append(MakeConstSpan(tri0));
       Int3 const tri1{v00, v11, v10};
-      visTriangles.append(MakeConstSpan(tri1));
+      surfaceTriangles.append(MakeConstSpan(tri1));
     }
   }
   // Start cap
@@ -1061,7 +1061,7 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
   for (int s = 0; s < numCrossSectionSegments; ++s) {
     int const s1 = (s + 1) % numCrossSectionSegments;
     Int3 const tri{startCapCenter, s1, s};
-    visTriangles.append(MakeConstSpan(tri));
+    surfaceTriangles.append(MakeConstSpan(tri));
   }
   // End cap
   int const endCapCenter = startCapCenter + 1;
@@ -1069,15 +1069,15 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
   for (int s = 0; s < numCrossSectionSegments; ++s) {
     int const s1 = (s + 1) % numCrossSectionSegments;
     Int3 const tri{endCapCenter, lastRingStart + s, lastRingStart + s1};
-    visTriangles.append(MakeConstSpan(tri));
+    surfaceTriangles.append(MakeConstSpan(tri));
   }
 
-  // Embedding: each visual vertex is assigned to exactly one element
+  // Embedding: each surface vertex is assigned to exactly one element
   int constexpr kWeightsPerNode = 1;
   DynamicArray<int> embeddingElementIndices;
   DynamicArray<real> embeddingWeights;
-  embeddingElementIndices.reserve(kWeightsPerNode * numVisualNodes);
-  embeddingWeights.reserve(kWeightsPerNode * numVisualNodes);
+  embeddingElementIndices.reserve(kWeightsPerNode * numSurfaceNodes);
+  embeddingWeights.reserve(kWeightsPerNode * numSurfaceNodes);
   for (int r = 0; r < numRings; ++r) {
     int const elem = Min(Max(r - 1, 0), numElements - 1);
     for (int s = 0; s < numCrossSectionSegments; ++s) {
@@ -1103,17 +1103,17 @@ ModelData mochi::experimental::GenerateTubularRodModelData(
   model.mesh->connectivity = MakeSequentialPolylineConnectivity(numNodes, /*isClosedLoop=*/false);
   model.elementFrameAxes = Flatten(frameAxes);
 
-  // Visual mesh (triangular tube)
-  model.visualMesh.emplace(MeshData{});
-  model.visualMesh->nodesPerElement = 3;
-  model.visualMesh->coordinates = std::move(visNodePositions);
-  model.visualMesh->connectivity = std::move(visTriangles);
+  // Contact skin (triangular tube)
+  model.contactSkinMesh.emplace(MeshData{});
+  model.contactSkinMesh->nodesPerElement = 3;
+  model.contactSkinMesh->coordinates = std::move(surfaceNodePositions);
+  model.contactSkinMesh->connectivity = std::move(surfaceTriangles);
 
   // Skinning data
-  model.visualMesh->skinning.emplace(SkinningData{});
-  model.visualMesh->skinning->weightsPerNode = kWeightsPerNode;
-  model.visualMesh->skinning->indices = std::move(embeddingElementIndices);
-  model.visualMesh->skinning->weights = std::move(embeddingWeights);
+  model.contactSkinMesh->skinning.emplace(SkinningData{});
+  model.contactSkinMesh->skinning->weightsPerNode = kWeightsPerNode;
+  model.contactSkinMesh->skinning->indices = std::move(embeddingElementIndices);
+  model.contactSkinMesh->skinning->weights = std::move(embeddingWeights);
 
   return model;
 }
@@ -1248,14 +1248,6 @@ void mochi::InitRodActor(
   auto const& shapeContactSkinEmbedding = shapePtr->GetRodContactSkinEmbedding();
   bool const hasUsableContactSkin = shapeContactSkinMesh && shapeContactSkinEmbedding;
   MOCHI_ERROR_IF(
-      params.useVisualMeshContact && params.useContactSkin,
-      error,
-      "useVisualMeshContact and useContactSkin cannot both be true.");
-  MOCHI_ERROR_IF(
-      params.useVisualMeshContact && !hasUsableVisualMesh,
-      error,
-      "useVisualMeshContact requires a rod shape with visual mesh and embedding data.");
-  MOCHI_ERROR_IF(
       params.useContactSkin && !hasUsableContactSkin,
       error,
       "useContactSkin requires a rod shape with contact skin and embedding data.");
@@ -1388,26 +1380,13 @@ void mochi::InitRodActor(
       params.contactElementType, shapePtr->GetNodes(), shapePtr->IsClosedLoop());
   int numCollidingSamples = segmentDisc.GetNumQuadPoints();
 
-  std::shared_ptr<TriangularMesh const> contactSkinMesh;
-  std::shared_ptr<RodSurfaceEmbeddingData const> contactSkinEmbedding;
-  ActorBoundaryElementType surfaceContactElementType = ActorBoundaryElementType::Default;
-  if (params.useVisualMeshContact) {
-    contactSkinMesh = visualMesh;
-    contactSkinEmbedding = visualEmbedding;
-    surfaceContactElementType = params.visualMeshContactElementType;
-  } else if (params.useContactSkin) {
-    contactSkinMesh = shapeContactSkinMesh;
-    contactSkinEmbedding = shapeContactSkinEmbedding;
-    surfaceContactElementType = params.contactSkinElementType;
-  }
-
-  if (contactSkinMesh) {
+  if (params.useContactSkin) {
     auto const& surfaceDisc = reg.emplace<CFemSurfaceDiscretization>(
-        e, CFemSurfaceDiscretization::Create(surfaceContactElementType, *contactSkinMesh));
+        e, CFemSurfaceDiscretization::Create(params.contactSkinElementType, *shapeContactSkinMesh));
     numCollidingSamples = surfaceDisc.GetNumQuadPoints();
 
     auto& contactSkin =
-        reg.emplace<CRodContactSkin>(e, contactSkinMesh, std::move(contactSkinEmbedding));
+        reg.emplace<CRodContactSkin>(e, shapeContactSkinMesh, shapeContactSkinEmbedding);
     auto& skinningData = reg.emplace<CRodContactSkinningData>(e);
     rod::InitializeContactSkinningJacobian(contactSkin, mesh, skinningData);
     reg.emplace<TagRodSurfaceContact>(e);
@@ -1416,7 +1395,7 @@ void mochi::InitRodActor(
 
     auto& deformedNodes = reg.emplace<CRodDeformedContactSkinNodes>(e);
     deformedNodes.positions.resize(
-        static_cast<size_t>(kSpaceDim3) * contactSkinMesh->GetNumNodes());
+        static_cast<size_t>(kSpaceDim3) * shapeContactSkinMesh->GetNumNodes());
   }
 
   // Contact. The point-cloud collider remains discretized on the rod centerline.
@@ -1424,7 +1403,7 @@ void mochi::InitRodActor(
   MOCHI_ERROR_RETURN(error);
 
   // Centerline contact rods.
-  if (!contactSkinMesh) {
+  if (!params.useContactSkin) {
     // Centerline contact assembly uses rod segments as the assembly elements. The contact-skin
     // path uses the skinned-contact subsystem instead.
     //

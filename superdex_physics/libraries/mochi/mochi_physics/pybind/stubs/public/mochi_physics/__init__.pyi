@@ -7225,8 +7225,8 @@ class ContactPoint:
     Note:
         Units depend on the dimensionality of the colliding manifold of
         :attr:`~superdex.physics.ContactPoint.actor_a`: [m²] for surface contact
-        (e.g., rigid, articulated, soft, shell, and rod actors using visual-mesh or
-        contact-skin contact), or [m] for rod actors using centerline contact.
+        (e.g., rigid, articulated, soft, shell, and rod actors using contact-skin
+        contact), or [m] for rod actors using centerline contact.
 
     Note:
         For surface contact, represents the surface area corresponding to the sample

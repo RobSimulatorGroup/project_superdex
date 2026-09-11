@@ -404,7 +404,7 @@ struct experimental::RodActorParams [no_reflection] {
   // ModelData::visualMesh. Without visual-mesh skinning, @ref Context::GetShapeVisualMesh still
   // returns the shape's visual mesh, but the rod actor ignores it: @ref Actor::GetVisualMesh returns
   // an empty view, and @ref QueryType::VisualNodePositions and @ref QueryType::VisualNodeNormals are
-  // unsupported. Setting @ref useVisualMeshContact to true then causes actor creation to fail.
+  // unsupported.
   // @note Setting @ref useContactSkin to true requires @ref ModelData::contactSkinMesh and its
   // skinning data.
   ShapeHandle shape;
@@ -427,22 +427,11 @@ struct experimental::RodActorParams [no_reflection] {
   // @brief Enables gravity.
   bool hasGravity = true;
 
-  // @brief Use the rod shape's visual mesh for contact instead of its centerline.
-  //
-  // @details Actor creation fails if this and @ref useContactSkin are both true, or if the shape
-  // does not have a visual mesh with rod embedding data.
-  bool useVisualMeshContact = false;
-
   // @brief Use the rod shape's contact skin for contact instead of its centerline.
   //
-  // @details Actor creation fails if this and @ref useVisualMeshContact are both true, or if the
-  // shape does not have a contact skin with rod embedding data.
+  // @details Actor creation fails if the shape does not have a triangular contact skin with rod
+  // embedding data.
   bool useContactSkin = false;
-
-  // @brief Triangle element type for visual-mesh contact quadrature.
-  //
-  // @note @ref RodActorParams::contactElementType controls centerline sampling instead.
-  ActorBoundaryElementType visualMeshContactElementType = Default;
 
   // @brief Triangle element type for contact-skin quadrature.
   //
