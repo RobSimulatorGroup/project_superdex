@@ -383,16 +383,20 @@ static void ResolveSkinning(
       reg.template get<CArticulatedLinkTransforms<kStep> const>(composition.articulated);
 
   if (activeNodes && !kForceUseAllNodes) {
-    auto rest3 = Unflatten<Real3 const>(MakeConstSpan(skinningData.restCoords));
-    auto softDisp3 = Unflatten<Real3 const>(MakeConstSpan(softDisp.value));
+    auto const nodeSpan = activeNodes->ViewIds();
+    if (nodeSpan.empty()) {
+      return;
+    }
+    auto const rest3 = Unflatten<Real3 const>(MakeConstSpan(skinningData.restCoords));
+    auto const softDisp3 = Unflatten<Real3 const>(MakeConstSpan(softDisp.value));
     auto pos3 = Unflatten<Real3>(MakeSpan(outPositions.value));
     auto disp3 = Unflatten<Real3>(MakeSpan(outDisplacements.value));
-    for (int node : activeNodes->ViewIds()) {
+    for (int node : nodeSpan) {
       pos3[node] = rest3[node] + softDisp3[node];
     }
     skinningData.skinningTransform.Transform(
-        linkTransforms, outPositions.value, outDisplacements.value, activeNodes->ViewIds());
-    for (int node : activeNodes->ViewIds()) {
+        linkTransforms, outPositions.value, outDisplacements.value, nodeSpan);
+    for (int node : nodeSpan) {
       disp3[node] -= rest3[node];
     }
   } else {

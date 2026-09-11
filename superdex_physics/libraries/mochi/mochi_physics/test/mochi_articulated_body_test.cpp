@@ -24,7 +24,9 @@
 #include <mochi_core/utils/constants.h>
 #include <mochi_core/utils/dynamic_array.h>
 #include <mochi_physics/src/mochi_articulated_body.h>
+#include <mochi_physics/src/mochi_blended.h>
 #include <mochi_physics/src/mochi_context.h>
+#include <mochi_physics/src/mochi_discretization_components.h>
 #include <mochi_physics/src/mochi_group.h>
 #include <mochi_physics/src/mochi_rigid.h>
 #include <mochi_physics/src/mochi_shape.h>
@@ -2210,9 +2212,9 @@ ShapeHandle CreateUnitCubeTriBlendedSkinShape(Context* context, DynamicString co
 }
 
 // Non-trivial subsampling configuration so the subsampling code path is exercised.
-BoundarySubsamplingParams MakeSubsampling() {
+BoundarySubsamplingParams MakeSubsampling(real density = 0.5_r) {
   BoundarySubsamplingParams subsampling;
-  subsampling.subsamplingDensity = 0.5_r;
+  subsampling.subsamplingDensity = density;
   return subsampling;
 }
 
@@ -2298,6 +2300,50 @@ TEST_F(CreateSkinnedArticulatedActorTest, JointPosePublishesSkinBeforeStep) {
       linkTranslationBefore + kTranslation, linkTransforms[0].GetTranslation(), kTolerance));
   EXPECT_TRUE(DisplacementsMatchTranslation(
       initial, actor->GetDisplacements(test::ExpectOK{}), kTranslation, kTolerance));
+}
+
+TEST_F(CreateSkinnedArticulatedActorTest, NonIdentityRootKeepsRestDisplacementsLocal) {
+  auto params = MakeMinimalSkinnedParams(CreateUnitCubeTetMeshShapeWithSkinning(_mochiContext));
+  params.worldFromRoot = TransformRT{
+      Quaternion::FromRotationVector(Real3{0.2_r, -0.3_r, 0.4_r}), Real3{1_r, 2_r, 3_r}};
+
+  auto* actor = _scene->CreateArticulatedActor(params, test::ExpectOK{});
+  ASSERT_NE(nullptr, actor);
+
+  auto const displacements = actor->GetDisplacements(test::ExpectOK{});
+  DynamicArray<real> const expected(displacements.size(), 0_r);
+  EXPECT_TRUE(test::NearEqualSpan(expected, displacements, kTolerance));
+
+  DynamicArray<real> pose(actor->GetNumDofs());
+  actor->GetArticulatedPose(pose, test::ExpectOK{});
+  Real3 constexpr kTranslation{0.1_r, -0.2_r, 0.3_r};
+  for (int axis = 0; axis < 3; ++axis) {
+    pose[axis] += kTranslation[axis];
+  }
+  actor->SetArticulatedPoseFromJoints(pose, test::ExpectOK{});
+
+  EXPECT_TRUE(DisplacementsMatchTranslation(
+      expected, actor->GetDisplacements(test::ExpectOK{}), kTranslation, kTolerance));
+}
+
+TEST_F(CreateSkinnedArticulatedActorTest, EmptyActiveNodesLeaveDerivedStateUnchanged) {
+  auto params = MakeMinimalSkinnedParams(CreateUnitCubeTetMeshShapeWithSkinning(_mochiContext));
+  params.skin->boundarySubsampling = MakeSubsampling(0_r);
+  auto* actor = _scene->CreateArticulatedActor(params, test::ExpectOK{});
+  ASSERT_NE(nullptr, actor);
+
+  auto& reg = GetRegistry();
+  entt::entity const entity = GetEntity(actor);
+  ASSERT_EQ(0, reg.get<CActiveUniqueNodes const>(entity).Count());
+  auto& displacements =
+      reg.get<CDisplacementSlice<real, TimeStep::Current, DisplacementLayer::Skinned>>(entity)
+          .value;
+  displacements.SetConstant(9_r);
+  ColumnVector<real> const expectedDisplacements(displacements);
+
+  articulated::compound::UpdateDerivedStatePipeline(reg, MakeSingletonConstSpan(entity));
+
+  EXPECT_TRUE(test::NearEqualMatrices(expectedDisplacements, displacements));
 }
 
 // Create a minimal one-bone articulated actor whose skin is a tetrahedral mesh, with
@@ -2487,7 +2533,11 @@ class ExternalPoseResetTest : public CreateBlendedActorTest {
     auto const nestedAfter = CopyDisplacements(*nested);
     auto const parentAfter = CopyDisplacements(*parent);
     EXPECT_TRUE(DisplacementsMatchTranslation(nestedBefore, nestedAfter, kTranslation, kTolerance));
-    EXPECT_TRUE(test::NearEqualSpan(parentAfter, nestedAfter, kTolerance));
+    if (route == Route::Root) {
+      EXPECT_TRUE(test::NearEqualSpan(parentBefore, parentAfter, kTolerance));
+    } else {
+      EXPECT_TRUE(test::NearEqualSpan(parentAfter, nestedAfter, kTolerance));
+    }
 
     EXPECT_TRUE(reg.get<CIntegrationArticulatedReducedPose const>(parentEntity).prevSteps.empty());
     EXPECT_TRUE(reg.get<CIntegrationArticulatedJointVels const>(parentEntity).prevSteps.empty());
@@ -2529,6 +2579,52 @@ TEST_F(CreateBlendedActorTest, TriMesh) {
   Actor const* actor = _scene->CreateSoftSkinnedActor(params, test::ExpectOK{});
   ASSERT_NE(nullptr, actor);
   EXPECT_EQ(ActorType::Articulated, actor->GetType());
+}
+
+TEST_F(CreateBlendedActorTest, NonIdentityRootKeepsRestDisplacementsLocal) {
+  auto params = MakeMinimalBlendedParams(
+      CreateUnitCubeTetBlendedSkinShape(_mochiContext, DynamicString{"soft"}));
+  params.skeletonParams.worldFromRoot = TransformRT{
+      Quaternion::FromRotationVector(Real3{0.2_r, -0.3_r, 0.4_r}), Real3{1_r, 2_r, 3_r}};
+
+  auto* actor = _scene->CreateSoftSkinnedActor(params, test::ExpectOK{});
+  ASSERT_NE(nullptr, actor);
+
+  auto const displacements = actor->GetDisplacements(test::ExpectOK{});
+  DynamicArray<real> const expected(displacements.size(), 0_r);
+  EXPECT_TRUE(test::NearEqualSpan(expected, displacements, kTolerance));
+
+  DynamicArray<real> pose(actor->GetNumDofs());
+  actor->GetArticulatedPose(pose, test::ExpectOK{});
+  Real3 constexpr kTranslation{0.1_r, -0.2_r, 0.3_r};
+  for (int axis = 0; axis < 3; ++axis) {
+    pose[axis] += kTranslation[axis];
+  }
+  actor->SetArticulatedPoseFromJoints(pose, test::ExpectOK{});
+
+  EXPECT_TRUE(DisplacementsMatchTranslation(
+      expected, actor->GetDisplacements(test::ExpectOK{}), kTranslation, kTolerance));
+}
+
+TEST_F(CreateBlendedActorTest, EmptyActiveNodesLeaveDerivedStateUnchanged) {
+  auto params = MakeMinimalBlendedParams(
+      CreateUnitCubeTetBlendedSkinShape(_mochiContext, DynamicString{"soft"}));
+  params.skeletonParams.skin->boundarySubsampling = MakeSubsampling(0_r);
+  auto* actor = _scene->CreateSoftSkinnedActor(params, test::ExpectOK{});
+  ASSERT_NE(nullptr, actor);
+
+  auto& reg = GetRegistry();
+  entt::entity const entity = GetEntity(actor);
+  ASSERT_EQ(0, reg.get<CActiveUniqueNodes const>(entity).Count());
+  auto& displacements =
+      reg.get<CDisplacementSlice<real, TimeStep::Current, DisplacementLayer::Skinned>>(entity)
+          .value;
+  displacements.SetConstant(9_r);
+  ColumnVector<real> const expectedDisplacements(displacements);
+
+  blended::UpdateDerivedStatePipeline(reg, MakeSingletonConstSpan(entity));
+
+  EXPECT_TRUE(test::NearEqualMatrices(expectedDisplacements, displacements));
 }
 
 // A soft-skinned actor cannot be bound to a zero-dof (all-Hard) skeleton: there is no joint

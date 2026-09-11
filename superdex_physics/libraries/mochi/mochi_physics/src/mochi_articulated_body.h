@@ -429,16 +429,6 @@ void UpdateJacobianState(
 }
 
 /*
- * System to update the displacements of the skinning. Templatized according to time step type.
- */
-template <TimeStep kStep, bool kForceUseAllNodes = false>
-void ResolveSkinning(
-    CArticulatedLinkTransforms<kStep> const& linkTransforms,
-    CArticulatedSkinningData const& skinningData,
-    CActiveUniqueNodes const* activeNodes,
-    CDisplacementSlice<real, kStep, DisplacementLayer::Skinned>& outDisplacements);
-
-/*
  * Function to update the Jacobian of some skinned data w.r.t. the bone dofs (if one exists).
  * It is called from the method computing the Jacobian w.r.t. to the joint dofs.
  * Note that in this case template does not require time step type or mesh type since Jacobian is

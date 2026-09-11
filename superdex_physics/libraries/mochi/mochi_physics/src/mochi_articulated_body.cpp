@@ -62,6 +62,50 @@ using namespace mochi::dmap;
 
 static constexpr real kDResRegularizationCoefficient = 1e-6_r;
 
+// Resolve skinned local displacements.
+template <TimeStep kStep, bool kForceUseAllNodes = false>
+static void ResolveSkinning(
+    CRootTransform const& rootTransform,
+    CArticulatedLinkTransforms<kStep> const& linkTransforms,
+    CArticulatedSkinningData const& skinningData,
+    CActiveUniqueNodes const* activeNodes,
+    CDisplacementSlice<real, kStep, DisplacementLayer::Skinned>& outDisplacements) {
+  MOCHI_PROFILE_SCOPE();
+  Span<int const> nodeSpan;
+  if (activeNodes && !kForceUseAllNodes) {
+    nodeSpan = activeNodes->ViewIds();
+    if (nodeSpan.empty()) {
+      return;
+    }
+  }
+
+  // Compute local-frame link transforms if rootFromWorld is not identity.
+  Span<TransformRT const> linkTransformsSpan = linkTransforms;
+  MOCHI_FILO_STACK_ALLOCATOR(allocator, 256 * sizeof(TransformRT));
+  DynamicArray<TransformRT> rootFromLinkTransforms(&allocator);
+  if (rootTransform.worldFromLocal != TransformRT{}) {
+    rootFromLinkTransforms.reserve(linkTransforms.size());
+    auto const rootFromWorld = Invert(rootTransform.worldFromLocal);
+    for (auto const& worldFromBone : linkTransforms) {
+      rootFromLinkTransforms.emplace_back(rootFromWorld * worldFromBone);
+    }
+    linkTransformsSpan = rootFromLinkTransforms;
+  }
+
+  // Compute skinning displacements in the local frame
+  skinningData.skinningTransform.Transform(
+      linkTransformsSpan, skinningData.restCoords, outDisplacements.value, nodeSpan);
+  if (!nodeSpan.empty()) {
+    auto const rest3 = Unflatten<Real3 const>(MakeConstSpan(skinningData.restCoords));
+    auto displacements3 = Unflatten<Real3>(MakeSpan(outDisplacements.value));
+    for (int node : nodeSpan) {
+      displacements3[node] -= rest3[node];
+    }
+    return;
+  }
+  outDisplacements.value -= skinningData.restCoords;
+}
+
 /*
  * Pipeline to resolve current skinning displacements for all nodes, including inactive nodes when
  * subsampling is enabled.
@@ -71,9 +115,7 @@ static void ArticulatedResolveAllNodeSkinningDisplacementsPipeline(
     Span<entt::entity const> entities) {
   MOCHI_PROFILE_SCOPE();
   ecs::InvokeForEach(
-      &articulated::compound::ResolveSkinning<TimeStep::Current, /* kForceUseAllNodes */ true>,
-      reg,
-      entities);
+      &ResolveSkinning<TimeStep::Current, /* kForceUseAllNodes */ true>, reg, entities);
 }
 
 // Set full pose from internal rigid actors' state
@@ -1844,41 +1886,6 @@ MOCHI_SPECIALIZE_UPDATE_JACOBIANS_INPUT_PIPELINE(TimeStep::Current);
 MOCHI_SPECIALIZE_UPDATE_JACOBIANS_INPUT_PIPELINE(TimeStep::Previous);
 #undef MOCHI_SPECIALIZE_UPDATE_JACOBIANS_INPUT_PIPELINE
 
-// Generic implementation. Specializations follow.
-template <TimeStep kStep, bool kForceUseAllNodes>
-void articulated::compound::ResolveSkinning(
-    CArticulatedLinkTransforms<kStep> const& linkTransforms,
-    CArticulatedSkinningData const& skinningData,
-    CActiveUniqueNodes const* activeNodes,
-    CDisplacementSlice<real, kStep, DisplacementLayer::Skinned>& outDisplacements) {
-  MOCHI_PROFILE_SCOPE();
-  if (activeNodes && !kForceUseAllNodes) {
-    auto rest3 = Unflatten<Real3 const>(MakeConstSpan(skinningData.restCoords));
-    auto disp3 = Unflatten<Real3>(MakeSpan(outDisplacements.value));
-    Span<int const> activeNodeSpan = activeNodes->ViewIds();
-    skinningData.skinningTransform.Transform(
-        linkTransforms, skinningData.restCoords, outDisplacements.value, activeNodeSpan);
-    for (int iNode : activeNodeSpan) {
-      disp3[iNode] -= rest3[iNode];
-    }
-  } else {
-    skinningData.skinningTransform.Transform(
-        linkTransforms, skinningData.restCoords, outDisplacements.value);
-    outDisplacements.value -= skinningData.restCoords;
-  }
-}
-
-// Explicit specializations
-#define MOCHI_SPECIALIZE_RESOLVE_SKINNING(StepT)               \
-  template void articulated::compound::ResolveSkinning<StepT>( \
-      CArticulatedLinkTransforms<StepT> const& linkTransforms, \
-      CArticulatedSkinningData const& skinningData,            \
-      CActiveUniqueNodes const* activeNodes,                   \
-      CDisplacementSlice<real, StepT, DisplacementLayer::Skinned>& outDisplacements);
-MOCHI_SPECIALIZE_RESOLVE_SKINNING(TimeStep::Current);
-MOCHI_SPECIALIZE_RESOLVE_SKINNING(TimeStep::StageStart);
-#undef MOCHI_SPECIALIZE_RESOLVE_SKINNING
-
 void articulated::compound::ResolveSkinningJacobianDBones(
     Span<TransformRT const> linkTransforms,
     ColumnVectorView<real const> unposedCoords,
@@ -2920,7 +2927,7 @@ void articulated::compound::PreStagePipeline(
   // Then, update the rigid actors in the compound (if any).
   ecs::InvokeForEach(&articulated::rigid::EntityPreStage, reg, entities);
 
-  ecs::InvokeForEach(&articulated::compound::ResolveSkinning<TimeStep::StageStart>, reg, entities);
+  ecs::InvokeForEach(&ResolveSkinning<TimeStep::StageStart>, reg, entities);
 }
 
 void articulated::compound::PostStagePipeline(
