@@ -1,3 +1,17 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 // @brief Represents a simulated body (actor) in a scene.
 //
 // @warning Concurrent access to the actor or its scene is illegal.
@@ -66,6 +80,8 @@ class Actor [no_init, no_destruct, use_scene] {
   // @brief Get the contact parameters of the actor.
   //
   // @return Contact parameters of the actor.
+  //
+  // @note Reports an error if the actor has no contact parameters.
   fn GetContactParams() -> ContactParams [pure, virtual, const, mochi_error, batchable];
 
   // @brief Set the contact parameters of the actor.
@@ -363,8 +379,9 @@ class Actor [no_init, no_destruct, use_scene] {
   // @details Returns a compact triangle mesh for the actor's surface. For volumetric simulation
   // meshes, the surface is the boundary triangles. For triangular simulation meshes, the surface
   // has the same triangle elements as the simulation mesh, but nodes not referenced by any surface
-  // triangle are omitted and remaining nodes may be reindexed. Returns an empty view if the actor
-  // does not have a surface mesh.
+  // triangle are omitted and remaining nodes may be reindexed. For rod actors with an authored
+  // contact skin, returns that skin regardless of the actor's selected collision representation.
+  // Returns an empty view if the actor does not have a surface mesh.
   //
   // @return A non-owning view of the actor's reference surface mesh, or an empty view if the actor
   // has no surface mesh.
@@ -416,6 +433,8 @@ class Actor [no_init, no_destruct, use_scene] {
   // are available after the simulation step completes.
   // @note Requires the actor to support @ref QueryType::SurfaceNodePositions.
   // @note The node ordering corresponds to the mesh connectivity from @ref GetSurfaceMesh.
+  // @note Supported for rod actors whose shape has an authored contact skin, regardless of whether
+  // that skin is selected for collision.
   //
   // @see RegisterQuery, QueryType::SurfaceNodePositions, GetSurfaceMesh,
   // GetSurfaceMeshNodeNormalsLocal
@@ -432,6 +451,8 @@ class Actor [no_init, no_destruct, use_scene] {
   // are available after the simulation step completes.
   // @note Requires the actor to support @ref QueryType::SurfaceNodeNormals.
   // @note The node ordering corresponds to the mesh connectivity from @ref GetSurfaceMesh.
+  // @note Supported for rod actors whose shape has an authored contact skin, regardless of whether
+  // that skin is selected for collision.
   //
   // @see RegisterQuery, QueryType::SurfaceNodeNormals, GetSurfaceMesh,
   // GetSurfaceMeshNodePositionsLocal
@@ -1090,6 +1111,8 @@ class Actor [no_init, no_destruct, use_scene] {
   // @return Span of pointers to joint limit constraints.
   //
   // @note Only applicable to articulated actors.
+  // @note These constraints are owned by the articulated actor and cannot be destroyed directly
+  // with @ref Scene::DestroyConstraint. They are destroyed with the actor.
   //
   // @see GetArticulatedDofLimits
   fn GetArticulatedJointLimitConstraints() -> Span<Constraint* const> [pure, virtual, const, mochi_error, batchable];
@@ -1381,6 +1404,9 @@ class Actor [no_init, no_destruct, use_scene] {
   // @return Span of pose constraint information.
   //
   // @note Only applicable to articulated actors with a pose controller.
+  // @note These constraints are owned by the pose controller and cannot be destroyed individually
+  // with @ref Scene::DestroyConstraint. Removing the pose controller with
+  // @ref RemoveArticulatedPoseController destroys all of its constraints.
   //
   // @see PoseConstraintInfo, GetArticulatedPoseControllerParams, SetArticulatedPoseControllerParams
   fn GetArticulatedPoseConstraints() -> Span<PoseConstraintInfo const> [pure, virtual, const, mochi_error, batchable, no_capi];

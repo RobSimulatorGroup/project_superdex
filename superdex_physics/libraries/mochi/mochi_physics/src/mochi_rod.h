@@ -83,6 +83,15 @@ struct CRodVisualMeshEmbedding : public NoCopy {
   std::shared_ptr<RodSurfaceEmbeddingData const> data;
 };
 
+// ECS component holding the nonlinear embedding for the rod's authored surface mesh.
+struct CRodSurfaceMeshEmbedding : public NoCopy {
+  explicit CRodSurfaceMeshEmbedding(std::shared_ptr<RodSurfaceEmbeddingData const> dataIn)
+      : data(std::move(dataIn)) {
+    MOCHI_ASSERT(data != nullptr);
+  }
+  std::shared_ptr<RodSurfaceEmbeddingData const> data;
+};
+
 // Owns the triangular mesh and rod embedding selected for surface contact. These may alias the
 // rod shape's visual data or describe a dedicated contact skin.
 struct CRodContactSkin : public NoCopy {
@@ -387,6 +396,15 @@ void UpdateQueryVisualNodePositionsAndNormals(
     CRodPose<TimeStep::Current> const& rodPose,
     CQueryVisualNodePositions& outVisPosQuery,
     CQueryVisualNodeNormals* outVisNormQuery);
+
+// Compute deformed authored surface-mesh node positions for a rod actor in compact active-node
+// ordering.
+void UpdateQuerySurfaceNodePositions(
+    CSurfaceMesh const& surfaceMesh,
+    CRodSurfaceMeshEmbedding const& rodEmbedding,
+    CPolylineMesh const& polylineMesh,
+    CRodPose<TimeStep::Current> const& rodPose,
+    CQuerySurfaceNodePositions& outSurfacePosQuery);
 
 // Builds the CSR sparsity pattern of the contact-skin Jacobian ∂x_skin/∂(rod DoFs). The sparsity
 // depends only on topology-invariant embedding data, so this runs once during actor setup. The

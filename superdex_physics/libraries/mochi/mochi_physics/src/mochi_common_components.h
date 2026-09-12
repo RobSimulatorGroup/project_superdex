@@ -386,10 +386,14 @@ struct IntegrationBundle {
     stages.reserve(kMaxIntegrationStages);
   }
 
-  // Constructor from numDofs only if T is constructible from int
-  explicit IntegrationBundle(int numDofs)
-    requires(std::is_constructible_v<T, int>)
-      : stepStart(numDofs) {
+  // Forward value-specific construction arguments to the step-start state.
+  template <typename... Args>
+  explicit IntegrationBundle(Args&&... args)
+    requires(
+        sizeof...(Args) > 0 && std::is_constructible_v<T, Args...> &&
+        !(sizeof...(Args) == 1 &&
+          (std::is_base_of_v<IntegrationBundle<T>, std::remove_cvref_t<Args>> && ...)))
+      : stepStart(std::forward<Args>(args)...) {
     prevSteps.reserve(kMaxIntegrationSteps);
     stages.reserve(kMaxIntegrationStages);
   }
@@ -407,6 +411,29 @@ struct IntegrationBundle {
   MOCHI_TEMPLATE_END();
 };
 
+// Macros for defining ECS components of numerically-integrated positions/velocities. Invoke them
+// directly in namespace mochi. ValueType must not contain a top-level comma; use a type alias for
+// multi-argument template types.
+#define MOCHI_DEFINE_INTEGRATION_COMPONENT(Component, ValueType)   \
+  struct Component : public IntegrationBundle<ValueType>, NoCopy { \
+    using IntegrationBundle<ValueType>::IntegrationBundle;         \
+                                                                   \
+    MOCHI_STRUCT_BEGIN(mochi::Component);                          \
+    MOCHI_ATTRIBUTE(CaptureState);                                 \
+    MOCHI_BASE_CLASS(IntegrationBundle<ValueType>);                \
+    MOCHI_STRUCT_END();                                            \
+  }
+
+#define MOCHI_DEFINE_INTEGRATION_COMPONENT_TEMPLATE(Component, ValueType, ...) \
+  struct Component : public IntegrationBundle<ValueType>, NoCopy {             \
+    using IntegrationBundle<ValueType>::IntegrationBundle;                     \
+                                                                               \
+    MOCHI_TEMPLATE_BEGIN(mochi::Component, __VA_ARGS__);                       \
+    MOCHI_ATTRIBUTE(CaptureState);                                             \
+    MOCHI_BASE_CLASS(IntegrationBundle<ValueType>);                            \
+    MOCHI_TEMPLATE_END();                                                      \
+  }
+
 // Rigid body state at a given time.
 struct TransformRTContainer {
   TransformRTContainer() = default;
@@ -419,21 +446,20 @@ struct TransformRTContainer {
   MOCHI_STRUCT_END();
 };
 
+/// @brief Component for time integration of rigid body pose.
+MOCHI_DEFINE_INTEGRATION_COMPONENT(CIntegrationRigidStates, TransformRTContainer);
+
 template <TimeStep kStep>
 struct CRigidState : public TransformRTContainer {
   using TransformRTContainer::TransformRTContainer;
   MOCHI_TEMPLATE_BEGIN(mochi::CRigidState, kStep);
-  MOCHI_ATTRIBUTE_IF(kStep == TimeStep::Current, CaptureState);
+  // This component is captured only when it represents true state, which is signaled by the
+  // existence of a corresponding integration component.
+  MOCHI_ATTRIBUTE_IF(
+      kStep == TimeStep::Current,
+      CaptureState(ecs::Included<CIntegrationRigidStates>{}));
   MOCHI_BASE_CLASS(mochi::TransformRTContainer);
   MOCHI_TEMPLATE_END();
-};
-
-/// @brief Component for time integration of rigid body pose.
-struct CIntegrationRigidStates : public IntegrationBundle<TransformRTContainer>, NoCopy {
-  MOCHI_STRUCT_BEGIN(mochi::CIntegrationRigidStates);
-  MOCHI_ATTRIBUTE(CaptureState);
-  MOCHI_BASE_CLASS(IntegrationBundle<TransformRTContainer>);
-  MOCHI_STRUCT_END();
 };
 
 // Traits that define metadata for different vector types that might be part of an
@@ -637,13 +663,9 @@ using CDenseTimeSliceVector = CDenseTimeSlice<
 template <typename Scalar, typename MetadataType, TimeStep kRelTime>
 struct CTimeSlice : public CVectorComponent<Scalar, MetadataType> {
   using BaseType = CVectorComponent<Scalar, MetadataType>;
-  CTimeSlice() = default;
-  explicit CTimeSlice(int numDofs) : BaseType(numDofs) {}
-  explicit CTimeSlice(ColumnVector<Scalar> const& value) : BaseType(value) {}
-  explicit CTimeSlice(ColumnVector<Scalar>&& value) : BaseType(std::move(value)) {}
+  using BaseType::BaseType;
 
   MOCHI_TEMPLATE_BEGIN(mochi::CTimeSlice, Scalar, MetadataType, kRelTime);
-  MOCHI_ATTRIBUTE_IF(kRelTime == TimeStep::Current, CaptureState);
   MOCHI_BASE_CLASS(BaseType);
   MOCHI_TEMPLATE_END()
 };
@@ -669,8 +691,20 @@ struct DisplacementVectorMetadata : public MatrixMetadata<MatrixSemantics::Displ
   MOCHI_BASE_CLASS(BaseType);
   MOCHI_TEMPLATE_END();
 };
+
 template <typename Scalar, TimeStep kRelTime, DisplacementLayer kLayer = DisplacementLayer::Default>
-using CDisplacementSlice = CTimeSlice<Scalar, DisplacementVectorMetadata<kLayer>, kRelTime>;
+struct CDisplacementSlice
+    : public CTimeSlice<Scalar, DisplacementVectorMetadata<kLayer>, kRelTime> {
+  using BaseType = CTimeSlice<Scalar, DisplacementVectorMetadata<kLayer>, kRelTime>;
+  using BaseType::BaseType;
+
+  MOCHI_TEMPLATE_BEGIN(mochi::CDisplacementSlice, Scalar, kRelTime, kLayer);
+  MOCHI_ATTRIBUTE_IF(
+      kRelTime == TimeStep::Current && kLayer == DisplacementLayer::Default,
+      CaptureState);
+  MOCHI_BASE_CLASS(BaseType);
+  MOCHI_TEMPLATE_END()
+};
 
 template <DisplacementLayer kLayer>
 struct VelocityVectorMetadata : public MatrixMetadata<MatrixSemantics::TangentSpaceVector> {
@@ -679,34 +713,31 @@ struct VelocityVectorMetadata : public MatrixMetadata<MatrixSemantics::TangentSp
   MOCHI_BASE_CLASS(BaseType);
   MOCHI_TEMPLATE_END();
 };
-template <typename Scalar, TimeStep kRelTime, DisplacementLayer kLayer = DisplacementLayer::Default>
-using CVelocitySlice = CTimeSlice<Scalar, VelocityVectorMetadata<kLayer>, kRelTime>;
 
-/// @brief Component for time integration of displacement slices.
+template <typename Scalar, TimeStep kRelTime, DisplacementLayer kLayer = DisplacementLayer::Default>
+struct CVelocitySlice : public CTimeSlice<Scalar, VelocityVectorMetadata<kLayer>, kRelTime> {
+  using BaseType = CTimeSlice<Scalar, VelocityVectorMetadata<kLayer>, kRelTime>;
+  using BaseType::BaseType;
+
+  MOCHI_TEMPLATE_BEGIN(mochi::CVelocitySlice, Scalar, kRelTime, kLayer);
+  MOCHI_ATTRIBUTE_IF(kRelTime == TimeStep::Current, CaptureState);
+  MOCHI_BASE_CLASS(BaseType);
+  MOCHI_TEMPLATE_END()
+};
+
 using DefaultDisplacementSlice =
     VectorComponent<real, DisplacementVectorMetadata<DisplacementLayer::Default>>;
-struct CIntegrationDisplacementSlices : public IntegrationBundle<DefaultDisplacementSlice>, NoCopy {
-  using IntegrationBundle<DefaultDisplacementSlice>::IntegrationBundle;
+/// @brief Component for time integration of displacement slices.
+MOCHI_DEFINE_INTEGRATION_COMPONENT(CIntegrationDisplacementSlices, DefaultDisplacementSlice);
 
-  MOCHI_STRUCT_BEGIN(mochi::CIntegrationDisplacementSlices);
-  MOCHI_ATTRIBUTE(CaptureState);
-  MOCHI_BASE_CLASS(IntegrationBundle<DefaultDisplacementSlice>);
-  MOCHI_STRUCT_END();
-};
-
+template <DisplacementLayer kLayer>
+using VelocityIntegrationValue = VectorComponent<real, VelocityVectorMetadata<kLayer>>;
 /// @brief Component for time integration of velocity slices.
 template <DisplacementLayer kLayer = DisplacementLayer::Default>
-struct CIntegrationVelocitySlices
-    : public IntegrationBundle<VectorComponent<real, VelocityVectorMetadata<kLayer>>>,
-      NoCopy {
-  using BaseClass = IntegrationBundle<VectorComponent<real, VelocityVectorMetadata<kLayer>>>;
-  using BaseClass::BaseClass;
-
-  MOCHI_TEMPLATE_BEGIN(mochi::CIntegrationVelocitySlices, kLayer);
-  MOCHI_ATTRIBUTE(CaptureState);
-  MOCHI_BASE_CLASS(BaseClass);
-  MOCHI_TEMPLATE_END();
-};
+MOCHI_DEFINE_INTEGRATION_COMPONENT_TEMPLATE(
+    CIntegrationVelocitySlices,
+    VelocityIntegrationValue<kLayer>,
+    kLayer);
 
 template <typename... Ts>
 struct CVariant {

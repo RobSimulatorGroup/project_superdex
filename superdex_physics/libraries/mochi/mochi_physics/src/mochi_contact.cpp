@@ -34,6 +34,7 @@
 #include "mochi_soft_rom_systems.h"
 #include "mochi_soft_skinned.h"
 
+#include <mochi_core/geometry/batch_sphere.h>
 #include <mochi_core/geometry/geometry_utils.h>
 #include <mochi_core/geometry/grid_sdf.h>
 #include <mochi_core/memory/filo_allocator.h>
@@ -795,8 +796,8 @@ template <TimeStep kTimeStep, bool kAllowFarSdfQuery>
   // introduced in the future.
   if (contactSamples.bsh && IsFinite(farSdfDistance)) {
     MOCHI_ASSERT(
-        outPositionsToQuery.size() == contactSamples.bsh->NumSamplePoints(),
-        "Inconsistent number of sample points. Is the BVH tree up-to-date with the number of active sample points?");
+        outPositionsToQuery.size() == contactSamples.bsh->GetNumSamples(),
+        "Inconsistent number of sample points. Is the SphereTree tree up-to-date with the number of active sample points?");
 
     AnyBoundingVolume colliderBvForCulling;
     bool shouldCull = true;
@@ -854,7 +855,12 @@ template <TimeStep kTimeStep, bool kAllowFarSdfQuery>
     // Perform culling.
     if (shouldCull) {
       culledIndicesBuffer.reserve(outPositionsToQuery.size());
-      contactSamples.bsh->FindIntersectingSamples(colliderBvForCulling, culledIndicesBuffer);
+
+      std::visit(
+          [&](auto const& bv) {
+            contactSamples.bsh->FindIntersectingSamples(bv, culledIndicesBuffer);
+          },
+          colliderBvForCulling);
 
       // Store culled positions and make 'outPositionsToQuery' point to them.
       culledPositionsBuffer.reserve(culledIndicesBuffer.size());
@@ -1370,7 +1376,7 @@ static void InitCollidingJacobians(
 }
 
 // This system is only used for far SDF queries.
-MOCHI_API void mochi::FarSdfCollisionDetection(
+void mochi::FarSdfCollisionDetection(
     ecs::Included<TagUseContact, CRequiresFarSdfEvaluation>,
     entt::registry& reg,
     entt::entity e) {
@@ -2309,7 +2315,7 @@ static void AssembleCollisionResponseRange(
   }
 }
 
-MOCHI_API void mochi::AssembleCollisionResponse(
+void mochi::AssembleCollisionResponse(
     ContactAssemblyReg reg,
     entt::entity colliding,
     entt::entity collider,
@@ -2420,9 +2426,11 @@ void mochi::UpdateCollisionSamplePositionsImpl(
     });
   });
 
-  if (outSamples.bsh) {
-    outSamples.bsh->Refit();
-  }
+  MOCHI_ASSERT(
+      !outSamples.bsh.has_value(),
+      "SphereOctTree does not currently support refitting. You could rebuild the tree from scratch, "
+      "or add a Refit method, but the best solution probably involves a different data structure "
+      "(e.g. an AABB tree).");
 }
 
 #define MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES_IMPL(activeFaces, discretization, numFields)     \
@@ -2440,7 +2448,7 @@ MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES_IMPL(true, CFemSegmentDiscretization, 
 #undef MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES_IMPL
 
 template <typename DiscretizationType, TimeStep kTimeStep, int kNumFields>
-MOCHI_API void mochi::UpdateCollisionSamplePositions(
+void mochi::UpdateCollisionSamplePositions(
     ecs::RequiredTag<TagUseContact>,
     CFinalDisplacementRef<kTimeStep> const& currSol,
     DiscretizationType const& discretization,
@@ -2461,13 +2469,12 @@ MOCHI_API void mochi::UpdateCollisionSamplePositions(
   }
 }
 
-#define MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES(dicretization, timeStep, numFields) \
-  template MOCHI_API void                                                             \
-  mochi::UpdateCollisionSamplePositions<dicretization, timeStep, numFields>(          \
-      ecs::RequiredTag<TagUseContact>,                                                \
-      CFinalDisplacementRef<timeStep> const&,                                         \
-      dicretization const&,                                                           \
-      CActiveBoundaryFaces const*,                                                    \
+#define MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES(dicretization, timeStep, numFields)      \
+  template void mochi::UpdateCollisionSamplePositions<dicretization, timeStep, numFields>( \
+      ecs::RequiredTag<TagUseContact>,                                                     \
+      CFinalDisplacementRef<timeStep> const&,                                              \
+      dicretization const&,                                                                \
+      CActiveBoundaryFaces const*,                                                         \
       CContactSamples<timeStep>&);
 MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES(CFemBoundaryDiscretization, TimeStep::Current, 3);
 MOCHI_SPECIALIZE_UPDATE_COLLISION_SAMPLES(CFemBoundaryDiscretization, TimeStep::StageStart, 3);
@@ -3877,6 +3884,7 @@ void InitializeOnce(entt::registry& reg) {
   ecs::RegisterComponent<CColliderInfo>(reg);
   ecs::RegisterComponent<CCollJacs<CollRole::Collider>>(reg);
   ecs::RegisterComponent<CCollJacs<CollRole::Colliding>>(reg);
+  ecs::RegisterComponent<CContactPairParamsOverrideTable>(reg);
   ecs::RegisterComponent<CContactPartitions>(reg);
   ecs::RegisterComponent<CContactSamples<TimeStep::Current>>(reg);
   ecs::RegisterComponent<CContactSamples<TimeStep::StageStart>>(reg);
@@ -3899,6 +3907,7 @@ void InitializeOnce(entt::registry& reg) {
 
   // Global Context
   reg.set<CContactFilterTable>();
+  reg.set<CContactPairParamsOverrideTable>();
   auto& data = reg.set<CTempPotentialColliderData>();
   int constexpr kReserveSize = 128; // Reserve memory for a modest number of actors up front
   data.staticColliders.reserve(kReserveSize);
@@ -4106,9 +4115,7 @@ void mochi::UpdateStageStartDataPipeline(
 }
 
 template <TimeStep kTimeStep>
-MOCHI_API void mochi::CollisionDetectionPipeline(
-    entt::registry& reg,
-    CIslandDescendants const& descendants) {
+void mochi::CollisionDetectionPipeline(entt::registry& reg, CIslandDescendants const& descendants) {
   MOCHI_PROFILE_SCOPE();
   TaskSemaphore sem;
 
@@ -4275,7 +4282,7 @@ MOCHI_API void mochi::CollisionDetectionPipeline(
   sem.Wait();
 }
 
-MOCHI_API void mochi::ContactJacobiansPipeline(
+void mochi::ContactJacobiansPipeline(
     entt::registry& reg,
     GradTarget gradTarget,
     CIslandDescendants const& descendants,
@@ -4310,11 +4317,11 @@ MOCHI_API void mochi::ContactJacobiansPipeline(
 }
 
 // Explicit instantiations for CollisionDetectionPipeline
-template MOCHI_API void mochi::CollisionDetectionPipeline<TimeStep::Current>(
+template void mochi::CollisionDetectionPipeline<TimeStep::Current>(
     entt::registry& reg,
     CIslandDescendants const& descendants);
 
-template MOCHI_API void mochi::CollisionDetectionPipeline<TimeStep::StageStart>(
+template void mochi::CollisionDetectionPipeline<TimeStep::StageStart>(
     entt::registry& reg,
     CIslandDescendants const& descendants);
 

@@ -48,7 +48,7 @@ void mochi::DeclareMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mo
   registry.StoreClass(py::class_<mochi::experimental::ForceControlActuatorParams>(m_experimental, "ForceControlActuatorParams"));
   registry.StoreClass(py::class_<mochi::experimental::McKibbenActuatorParams>(m_experimental, "McKibbenActuatorParams"));
   registry.StoreClass(py::class_<mochi::experimental::IKSolverParams>(m_experimental, "IKSolverParams", "Parameters controlling IK solver behavior.\n\nThese parameters configure the Newton solver used for inverse kinematics\noptimization. The solver finds quasistatic (time-invariant) configurations that\nsatisfy position and rotation target constraints for articulated bodies."));
-  registry.StoreClass(py::class_<mochi::experimental::IKSolver, std::unique_ptr<mochi::experimental::IKSolver, py::nodelete>>(m_experimental, "IKSolver", "Inverse kinematics solver for articulated bodies.\n\nPerforms quasistatic optimization to find time-invariant configurations that\noptimize a user-provided energy function. Currently supports soft-constraint\nenergy functions for specifying target position and orientation of rigid links\nin articulated bodies.\n\nNote:\n    The IK solver takes ownership of the scene passed at creation. The scene is\n    mutated (e.g., gravity zeroed, single-island forced, contact friction\n    zeroed, articulated inertia and joint friction removed) and is unsuitable\n    for general simulation afterward. Use it only via this\n    :class:`~superdex.physics.experimental.IKSolver`.\n\nNote:\n    Targets must be set before calling :meth:`solve_ik`.\n\nSee Also:\n    :func:`~superdex.physics.experimental.create_ik_solver`,\n    :func:`~superdex.physics.experimental.destroy_ik_solver`"));
+  registry.StoreClass(py::class_<mochi::experimental::IKSolver, std::unique_ptr<mochi::experimental::IKSolver, py::nodelete>>(m_experimental, "IKSolver", "Inverse kinematics solver for articulated bodies.\n\nPerforms quasistatic optimization to find time-invariant configurations that\noptimize a user-provided energy function. Currently supports soft-constraint\nenergy functions for specifying target position and orientation of rigid links\nin articulated bodies.\n\nNote:\n    The IK solver takes ownership of the scene passed at creation. The scene is\n    mutated (e.g., gravity zeroed, single-island forced, contact dissipation\n    zeroed, articulated inertia and joint friction removed) and is unsuitable\n    for general simulation afterward. Use it only via this\n    :class:`~superdex.physics.experimental.IKSolver`.\n\nNote:\n    Targets must be set before calling :meth:`solve_ik`.\n\nSee Also:\n    :func:`~superdex.physics.experimental.create_ik_solver`,\n    :func:`~superdex.physics.experimental.destroy_ik_solver`"));
   registry.StoreClass(py::class_<mochi::experimental::NewtonEulerTerms, std::unique_ptr<mochi::experimental::NewtonEulerTerms, py::nodelete>>(m_experimental, "NewtonEulerTerms"));
   registry.StoreClass(py::class_<mochi::experimental::ExperimentalSoftActorParams>(m_experimental, "ExperimentalSoftActorParams"));
   registry.StoreClass(py::class_<mochi::experimental::ExperimentalSoftSkinnedActorParams>(m_experimental, "ExperimentalSoftSkinnedActorParams"));
@@ -393,7 +393,7 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
   ;
 
   registry.GetClass<mochi::experimental::RodActorParams>()
-    .def(py::init([](py::object name, py::object layer, py::object world_from_local, py::object shape, py::object contact, py::object contact_element_type, py::object material, py::object collider_type, py::object point_cloud_collider, py::object has_gravity, py::object use_visual_mesh_contact, py::object visual_mesh_contact_element_type) {
+    .def(py::init([](py::object name, py::object layer, py::object world_from_local, py::object shape, py::object contact, py::object contact_element_type, py::object material, py::object collider_type, py::object point_cloud_collider, py::object has_gravity, py::object use_contact_skin, py::object contact_skin_element_type) {
       mochi::experimental::RodActorParams result;
       result.name = py::cast<mochi::DynamicString>(name);
       result.layer = py::cast<mochi::DynamicString>(layer);
@@ -405,8 +405,8 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
       result.colliderType = py::cast<mochi::ColliderType>(collider_type);
       result.pointCloudCollider = py::cast<mochi::experimental::PointCloudColliderParams>(point_cloud_collider);
       result.hasGravity = py::cast<bool>(has_gravity);
-      result.useVisualMeshContact = py::cast<bool>(use_visual_mesh_contact);
-      result.visualMeshContactElementType = py::cast<mochi::ActorBoundaryElementType>(visual_mesh_contact_element_type);
+      result.useContactSkin = py::cast<bool>(use_contact_skin);
+      result.contactSkinElementType = py::cast<mochi::ActorBoundaryElementType>(contact_skin_element_type);
       return result;
     })
       , py::kw_only()
@@ -420,8 +420,8 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
       , py::arg("collider_type") = mochi::experimental::RodActorParams{}.colliderType
       , py::arg("point_cloud_collider") = mochi::experimental::RodActorParams{}.pointCloudCollider
       , py::arg("has_gravity") = mochi::experimental::RodActorParams{}.hasGravity
-      , py::arg("use_visual_mesh_contact") = mochi::experimental::RodActorParams{}.useVisualMeshContact
-      , py::arg("visual_mesh_contact_element_type") = mochi::experimental::RodActorParams{}.visualMeshContactElementType
+      , py::arg("use_contact_skin") = mochi::experimental::RodActorParams{}.useContactSkin
+      , py::arg("contact_skin_element_type") = mochi::experimental::RodActorParams{}.contactSkinElementType
     )
     .def(py::init<>())
     .def("__copy__", [](mochi::experimental::RodActorParams const& self) { return mochi::experimental::RodActorParams(self); })
@@ -429,15 +429,15 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
     .def_readwrite("name", &mochi::experimental::RodActorParams::name, "Actor name.")
     .def_readwrite("layer", &mochi::experimental::RodActorParams::layer, "Contact layer name.")
     .def_readwrite("world_from_local", &mochi::experimental::RodActorParams::worldFromLocal, "World-from-local transform applied to the shape.")
-    .def_readwrite("shape", &mochi::experimental::RodActorParams::shape, "Shape handle defining the rod geometry. Must be a polyline shape.\n\nNote:\n    Each element's frame axis is interpreted as one cross-sectional principal\n    axis (the other is the cross product of the segment direction and that\n    axis); the flexural stiffness components are defined with respect to these\n    axes.")
+    .def_readwrite("shape", &mochi::experimental::RodActorParams::shape, "Shape handle defining the rod geometry. Must be a polyline shape.\n\nNote:\n    Each element's frame axis is interpreted as one cross-sectional principal\n    axis (the other is the cross product of the segment direction and that\n    axis); the flexural stiffness components are defined with respect to these\n    axes.\n\nNote:\n    A rod actor uses a visual mesh only when the shape has embedding data. For\n    shapes created from :class:`~superdex.physics.ModelData`, the embedding is\n    built from the skinning data in\n    :attr:`~superdex.physics.ModelData.visual_mesh`. Without visual-mesh\n    skinning, :func:`~superdex.physics.get_shape_visual_mesh` still returns the\n    shape's visual mesh, but the rod actor ignores it:\n    :meth:`~superdex.physics.Actor.get_visual_mesh` returns an empty view, and\n    :class:`VISUAL_NODE_POSITIONS <superdex.physics.QueryType>` and\n    :class:`VISUAL_NODE_NORMALS <superdex.physics.QueryType>` are unsupported.\n\nNote:\n    Setting\n    :attr:`~superdex.physics.experimental.RodActorParams.use_contact_skin` to\n    true requires :attr:`~superdex.physics.ModelData.contact_skin_mesh` and its\n    skinning data.")
     .def_readwrite("contact", &mochi::experimental::RodActorParams::contact, "Contact properties for interactions with volume actors.")
     .def_readwrite("contact_element_type", &mochi::experimental::RodActorParams::contactElementType, "Element type controlling the number of contact samples per segment.")
     .def_readwrite("material", &mochi::experimental::RodActorParams::material, "Rod material properties.")
     .def_readwrite("collider_type", &mochi::experimental::RodActorParams::colliderType, "Collider type. Set to PointCloud to enable point-cloud contact.")
     .def_readwrite("point_cloud_collider", &mochi::experimental::RodActorParams::pointCloudCollider, "Geometric and logical properties of the point-cloud collider.")
     .def_readwrite("has_gravity", &mochi::experimental::RodActorParams::hasGravity, "Enables gravity.")
-    .def_readwrite("use_visual_mesh_contact", &mochi::experimental::RodActorParams::useVisualMeshContact, "Places contact samples on the rod's visual (triangular) mesh instead of the\ncenterline.\n\nNote:\n    Forces are transmitted to rod degrees of freedom through the skinning\n    Jacobian. Requires the rod shape to have a visual mesh with embedding data.")
-    .def_readwrite("visual_mesh_contact_element_type", &mochi::experimental::RodActorParams::visualMeshContactElementType, "Element type controlling the number of visual-mesh contact samples per triangle.\nOnly used when visual-mesh contact is enabled.")
+    .def_readwrite("use_contact_skin", &mochi::experimental::RodActorParams::useContactSkin, "Use the rod shape's contact skin for contact instead of its centerline.\n\nActor creation fails if the shape does not have a triangular contact skin with\nrod embedding data.")
+    .def_readwrite("contact_skin_element_type", &mochi::experimental::RodActorParams::contactSkinElementType, "Triangle element type for contact-skin quadrature.\n\nNote:\n    :attr:`~superdex.physics.experimental.RodActorParams.contact_element_type`\n    controls centerline sampling instead.")
   ;
 
   registry.GetClass<mochi::experimental::ShellMaterialParams>()
@@ -755,7 +755,7 @@ void mochi::DefineMochiPhysics_MochiPhysicsExperimental([[maybe_unused]] py::mod
       return result;
     }
       , py::arg("scene")
-      , "Create a new inverse kinematics (IK) solver.\n\nArgs:\n    scene (Scene): Scene containing the articulated and/or rigid actor(s) to\n        perform IK on.\n\nReturns:\n    Pointer to the created :class:`~superdex.physics.experimental.IKSolver`, or\n    None on error.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs.\n\nNote:\n    The :class:`~superdex.physics.experimental.IKSolver` assumes exclusive\n    control of the provided scene. The scene must not be used directly and will\n    be destroyed by :func:`~superdex.physics.experimental.destroy_ik_solver`.\n\nNote:\n    Scene ownership transfers only on success. On error, ownership is unchanged.\n\nNote:\n    The scene must contain only :class:`ARTICULATED\n    <superdex.physics.ActorType>` and :class:`RIGID\n    <superdex.physics.ActorType>` actors.\n\nNote:\n    The scene's solver parameters, gravity, single-island setting, contact\n    friction, and articulated inertia/joint-friction terms are reconfigured for\n    IK and cannot be relied upon afterwards.\n\nSee Also:\n    :func:`~superdex.physics.experimental.destroy_ik_solver`"
+      , "Create a new inverse kinematics (IK) solver.\n\nArgs:\n    scene (Scene): Scene containing the articulated and/or rigid actor(s) to\n        perform IK on.\n\nReturns:\n    Pointer to the created :class:`~superdex.physics.experimental.IKSolver`, or\n    None on error.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs.\n\nNote:\n    The scene must have been created with :func:`~superdex.physics.create_scene`\n    and must not be owned or managed by another API.\n\nNote:\n    On success, ownership transfers to the\n    :class:`~superdex.physics.experimental.IKSolver`, which assumes exclusive\n    control and destroys the scene when\n    :func:`~superdex.physics.experimental.destroy_ik_solver` is called. Do not\n    use the scene directly after ownership transfers. On error, ownership is\n    unchanged.\n\nNote:\n    Returns an error if scene ownership has already been claimed.\n\nNote:\n    The scene must contain only :class:`ARTICULATED\n    <superdex.physics.ActorType>` and :class:`RIGID\n    <superdex.physics.ActorType>` actors.\n\nNote:\n    The scene's solver parameters, gravity, single-island setting, contact\n    dissipation, and articulated inertia/joint-friction terms are reconfigured\n    for IK and cannot be relied upon afterwards.\n\nSee Also:\n    :func:`~superdex.physics.experimental.destroy_ik_solver`"
     );
 
     m_experimental.def("destroy_ik_solver", [](mochi::experimental::IKSolver* solver) {

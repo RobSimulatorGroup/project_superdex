@@ -342,8 +342,9 @@ void FlipWindingOrder(MeshData& data, Error& error);
  * @brief Flip mesh winding order by swapping the connectivity indices within each element.
  *
  * @overload
- * @details Operates on both the simulation mesh (@ref ModelData::mesh) and the visual mesh
- * (@ref ModelData::visualMesh) when present. Implicit shapes and SDF data are not modified.
+ * @details Operates on the simulation mesh (@ref ModelData::mesh), visual mesh
+ * (@ref ModelData::visualMesh), and contact skin (@ref ModelData::contactSkinMesh) when present.
+ * Implicit shapes and SDF data are not modified.
  *
  * @param[in,out] data @ref ModelData to modify.
  * @param[in,out] error Error status. Check @ref Error::IsOK for success.

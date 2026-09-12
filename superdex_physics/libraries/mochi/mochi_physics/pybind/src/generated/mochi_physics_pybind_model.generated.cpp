@@ -249,7 +249,7 @@ void mochi::DefineMochiPhysics_MochiPhysicsModel([[maybe_unused]] py::module_& m
       }
     }
       , py::arg("data")
-      , "Flip mesh winding order by swapping the connectivity indices within each\nelement.\n\nOperates on both the simulation mesh (:attr:`~superdex.physics.ModelData.mesh`)\nand the visual mesh (:attr:`~superdex.physics.ModelData.visual_mesh`) when\npresent. Implicit shapes and SDF data are not modified.\n\nArgs:\n    data (ModelData): :class:`~superdex.physics.ModelData` to modify.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs."
+      , "Flip mesh winding order by swapping the connectivity indices within each\nelement.\n\nOperates on the simulation mesh (:attr:`~superdex.physics.ModelData.mesh`),\nvisual mesh (:attr:`~superdex.physics.ModelData.visual_mesh`), and contact skin\n(:attr:`~superdex.physics.ModelData.contact_skin_mesh`) when present. Implicit\nshapes and SDF data are not modified.\n\nArgs:\n    data (ModelData): :class:`~superdex.physics.ModelData` to modify.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs."
     );
 
 }

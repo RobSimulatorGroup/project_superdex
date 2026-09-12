@@ -280,7 +280,8 @@ static void KrylovSolveZ(
   // Create callable preconditioner: solves hat(dres) * z = r using the inner linear solver
   auto precOp = [&](ColumnVectorView<real const> in, ColumnVectorView<real> out) {
     out.SetZero();
-    precLinearSolver.Solve(approxHessian, in, out, /*hasOperatorChanged*/ false);
+    precLinearSolver.Solve(
+        approxHessian, in, out, /*hasOperatorChanged*/ false, InitialGuessHint::Zero);
   };
 
   // Initialize solution
@@ -301,13 +302,15 @@ static void KrylovSolveZ(
       backpropParams.outerSolverMaxIter,
       pcgStatusCheck,
       /*abortIfNotSpd*/ true,
-      backpropParams.verbosity);
+      backpropParams.verbosity,
+      /*usePolakRibiere*/ true,
+      InitialGuessHint::Zero);
 
-  // If PCG aborted due to non-SPD, fall back to MINRES
-  if (!outerResult.converged && outerResult.numIterDone < backpropParams.outerSolverMaxIter) {
+  // If PCG diverged, fall back to MINRES.
+  if (outerResult.convergence == LinearSolverConvergenceStatus::Diverged) {
     if (backpropParams.verbosity >= VerbosityLevel::Warning) {
       MOCHI_LOG_WARNING(
-          "PCG aborted at iteration %d (likely non-SPD). Falling back to MINRES.",
+          "PCG diverged at iteration %d (likely non-SPD). Falling back to MINRES.",
           outerResult.numIterDone);
     }
 
@@ -330,14 +333,18 @@ static void KrylovSolveZ(
         precOp,
         backpropParams.outerSolverMaxIter,
         minresStatusCheck,
-        backpropParams.verbosity);
+        backpropParams.verbosity,
+        InitialGuessHint::Zero);
 
-    if (backpropParams.verbosity >= VerbosityLevel::Verbose) {
+    if (outerResult.convergence == LinearSolverConvergenceStatus::Diverged &&
+        backpropParams.verbosity >= VerbosityLevel::Warning) {
+      MOCHI_LOG_WARNING("MINRES diverged at iteration %d.", outerResult.numIterDone);
+    } else if (backpropParams.verbosity >= VerbosityLevel::Verbose) {
       MOCHI_LOG(
           "MINRES: Finished after %d iterations, final resNorm = %f, converged = %d",
           outerResult.numIterDone,
           outerResult.residualNorm,
-          outerResult.converged);
+          IsConverged(outerResult.convergence));
     }
 
     if (backpropParams.verbosity >= VerbosityLevel::Warning && backpropParams.validateFiniteDiff) {
@@ -371,7 +378,7 @@ static void KrylovSolveZ(
         "PCG: Finished after %d iterations, final resNorm = %f, converged = %d",
         outerResult.numIterDone,
         outerResult.residualNorm,
-        outerResult.converged);
+        IsConverged(outerResult.convergence));
   }
 
   // Record statistics

@@ -1,3 +1,17 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 // @brief Main entry point for SuperDex Physics simulation.
 //
 // @details A @ref Context owns all global state for SuperDex Physics: scenes, shapes, threading,
@@ -642,8 +656,9 @@ class Context [no_init, no_destruct, singleton] {
   // @details Returns a triangle mesh (3 nodes per element) representing the shape's surface.
   // The coordinate array contains exactly the surface nodes referenced by the returned connectivity;
   // nodes present in the underlying main mesh but not referenced by any surface triangle are omitted.
-  // Connectivity values are indices into this returned coordinate array. For shapes without a
-  // surface mesh, returns an empty view.
+  // Connectivity values are indices into this returned coordinate array. For polyline shapes with
+  // an authored contact skin, returns that skin. For shapes without a surface mesh, returns an
+  // empty view.
   //
   // @note For triangular mesh shapes, this may differ from @ref GetShapeMesh if the main mesh
   // contains unreferenced nodes. For tetrahedral mesh shapes, this is the boundary surface of the

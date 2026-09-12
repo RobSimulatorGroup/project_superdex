@@ -315,10 +315,11 @@ void mochi::DefineMochiPhysics_MochiPhysicsContext([[maybe_unused]] py::module_&
       , py::arg("model")
       , "Create a shape using in-memory model data, so that it can be used to create\nactors.\n\nArgs:\n    model (ModelData): The model data, which SuperDex Physics copies.\n\nReturns:\n    A :class:`~superdex.physics.ShapeHandle` that can be used to create actors.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs.\n\nNote:\n    The shape remains in memory while referenced by any handle or actor. In the\n    C API, you must release the shape explicitly by calling\n    :func:`~superdex.physics.release_shape`. In C++ and Python, this is\n    optional, since :class:`~superdex.physics.ShapeHandle` cleanup is automatic.\n\nNote:\n    Call on any thread.\n\nNote:\n    Can be a mesh or an implicit shape, depending on the contents.\n\nSee Also:\n    :class:`~superdex.physics.ShapeHandle`,\n    :func:`~superdex.physics.release_shape`"
     );
-    m.def("create_model_shape", [](py::object mesh, py::object visual_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
+    m.def("create_model_shape", [](py::object mesh, py::object visual_mesh, py::object contact_skin_mesh, py::object blending, py::object constrained_nodes, py::object element_frame_axes, py::object box, py::object plane, py::object sphere, py::object sdf, py::object material) {
       mochi::ModelData params;
       params.mesh = py::cast<std::optional<mochi::MeshData>>(mesh);
       params.visualMesh = py::cast<std::optional<mochi::MeshData>>(visual_mesh);
+      params.contactSkinMesh = py::cast<std::optional<mochi::MeshData>>(contact_skin_mesh);
       params.blending = py::cast<std::optional<mochi::DynamicArray<mochi::BlendingData>>>(blending);
       params.constrainedNodes = py::cast<std::optional<mochi::DynamicArray<int>>>(constrained_nodes);
       params.elementFrameAxes = py::cast<std::optional<mochi::DynamicArray<mochi::real>>>(element_frame_axes);
@@ -338,6 +339,7 @@ void mochi::DefineMochiPhysics_MochiPhysicsContext([[maybe_unused]] py::module_&
       , py::kw_only()
       , py::arg("mesh") = mochi::ModelData{}.mesh
       , py::arg("visual_mesh") = mochi::ModelData{}.visualMesh
+      , py::arg("contact_skin_mesh") = mochi::ModelData{}.contactSkinMesh
       , py::arg("blending") = mochi::ModelData{}.blending
       , py::arg("constrained_nodes") = mochi::ModelData{}.constrainedNodes
       , py::arg("element_frame_axes") = mochi::ModelData{}.elementFrameAxes
@@ -440,7 +442,7 @@ void mochi::DefineMochiPhysics_MochiPhysicsContext([[maybe_unused]] py::module_&
       return result;
     }
       , py::arg("shape")
-      , "Get a view of the shape's surface mesh data.\n\nReturns a triangle mesh (3 nodes per element) representing the shape's surface.\nThe coordinate array contains exactly the surface nodes referenced by the\nreturned connectivity; nodes present in the underlying main mesh but not\nreferenced by any surface triangle are omitted. Connectivity values are indices\ninto this returned coordinate array. For shapes without a surface mesh, returns\nan empty view.\n\nArgs:\n    shape (ShapeHandle): Handle to a valid shape.\n\nReturns:\n    A non-owning view of the shape's surface mesh data, or an empty view if the\n    shape has no surface mesh.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs.\n\nNote:\n    For triangular mesh shapes, this may differ from\n    :func:`~superdex.physics.get_shape_mesh` if the main mesh contains\n    unreferenced nodes. For tetrahedral mesh shapes, this is the boundary\n    surface of the volume mesh, with non-boundary volume nodes omitted.\n\nNote:\n    Can be called on any thread.\n\nNote:\n    The returned view will be invalid after the shape handle has been released.\n\nSee Also:\n    :class:`~superdex.physics.MeshDataView`,\n    :func:`~superdex.physics.get_shape_mesh`,\n    :func:`~superdex.physics.get_shape_visual_mesh`,\n    :meth:`~superdex.physics.Actor.get_surface_mesh`"
+      , "Get a view of the shape's surface mesh data.\n\nReturns a triangle mesh (3 nodes per element) representing the shape's surface.\nThe coordinate array contains exactly the surface nodes referenced by the\nreturned connectivity; nodes present in the underlying main mesh but not\nreferenced by any surface triangle are omitted. Connectivity values are indices\ninto this returned coordinate array. For polyline shapes with an authored\ncontact skin, returns that skin. For shapes without a surface mesh, returns an\nempty view.\n\nArgs:\n    shape (ShapeHandle): Handle to a valid shape.\n\nReturns:\n    A non-owning view of the shape's surface mesh data, or an empty view if the\n    shape has no surface mesh.\n\nRaises:\n    :class:`~superdex.physics.Error`: If an error occurs.\n\nNote:\n    For triangular mesh shapes, this may differ from\n    :func:`~superdex.physics.get_shape_mesh` if the main mesh contains\n    unreferenced nodes. For tetrahedral mesh shapes, this is the boundary\n    surface of the volume mesh, with non-boundary volume nodes omitted.\n\nNote:\n    Can be called on any thread.\n\nNote:\n    The returned view will be invalid after the shape handle has been released.\n\nSee Also:\n    :class:`~superdex.physics.MeshDataView`,\n    :func:`~superdex.physics.get_shape_mesh`,\n    :func:`~superdex.physics.get_shape_visual_mesh`,\n    :meth:`~superdex.physics.Actor.get_surface_mesh`"
     );
 
     m.def("get_shape_visual_mesh", [](mochi::ShapeHandle shape) {

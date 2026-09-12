@@ -252,16 +252,15 @@ class GridSdfShape : public Shape {
   GridSdfShape& operator=(GridSdfShape&&) = delete;
 
   // Return this shape's GridSdf if it has one.
-  MOCHI_API std::shared_ptr<GridSdf const> GetGridSdf() const;
+  std::shared_ptr<GridSdf const> GetGridSdf() const;
 
   // If this shape already has a GridSdf, then return it.
   // Else if this shape does not support GridSdf, then set an error and return nullptr.
   // Else if a GridSdf can be computed, then start an async task (if not already started) and
   // return nullptr with (*outIsPending = true). To get the result of the async task, call
   // GetGridSdfSemaphore().Wait(), then GetGridSdf().
-  MOCHI_API std::shared_ptr<GridSdf const> RequestGridSdf(
-      GridSdfParams const& params,
-      bool* outIsPending) const;
+  std::shared_ptr<GridSdf const> RequestGridSdf(GridSdfParams const& params, bool* outIsPending)
+      const;
 
   // If you RequestGridSdf starts an async job, then you can use this semaphore to wait for
   // completion (see RequestGridSdf above).
@@ -285,6 +284,8 @@ class TetrahedralMeshShape final : public GridSdfShape {
       std::shared_ptr<BlendingDataMap const> meshBlendingData = {},
       std::shared_ptr<TriangularMesh const> visualMesh = {},
       std::shared_ptr<MeshEmbedding const> visualEmbedding = {},
+      std::shared_ptr<TriangularMesh const> contactSkin = {},
+      std::shared_ptr<LinearMeshEmbedding const> contactSkinEmbedding = {},
       std::shared_ptr<GridSdf const> gridSdf = {},
       std::unordered_map<std::string, RomData> roms = {},
       std::unordered_map<std::string, SampleMeshInfo> sampleMeshes = {},
@@ -297,6 +298,8 @@ class TetrahedralMeshShape final : public GridSdfShape {
         _meshBlendingData(std::move(meshBlendingData)),
         _visualMesh(std::move(visualMesh)),
         _visualEmbedding(std::move(visualEmbedding)),
+        _contactSkin(std::move(contactSkin)),
+        _contactSkinEmbedding(std::move(contactSkinEmbedding)),
         _romData(std::move(roms)),
         _sampleMeshes(std::move(sampleMeshes)),
         _bshs(std::move(bshs)),
@@ -343,6 +346,14 @@ class TetrahedralMeshShape final : public GridSdfShape {
     return _visualEmbedding;
   }
 
+  std::shared_ptr<TriangularMesh const> const& GetContactSkin() const {
+    return _contactSkin;
+  }
+
+  std::shared_ptr<LinearMeshEmbedding const> const& GetContactSkinEmbedding() const {
+    return _contactSkinEmbedding;
+  }
+
   std::shared_ptr<PerElementSoftMaterialData const> const& GetSoftMaterialParamsField() const {
     return _materialParamsField;
   }
@@ -368,6 +379,8 @@ class TetrahedralMeshShape final : public GridSdfShape {
   std::shared_ptr<BlendingDataMap const> _meshBlendingData;
   std::shared_ptr<TriangularMesh const> _visualMesh;
   std::shared_ptr<MeshEmbedding const> _visualEmbedding;
+  std::shared_ptr<TriangularMesh const> _contactSkin;
+  std::shared_ptr<LinearMeshEmbedding const> _contactSkinEmbedding;
   std::unordered_map<std::string, RomData> _romData;
   std::unordered_map<std::string, SampleMeshInfo> _sampleMeshes;
   std::unordered_map<std::string, ContactSamplesBsh> _bshs;
@@ -384,6 +397,8 @@ class TriangularMeshShape final : public GridSdfShape {
       std::shared_ptr<BlendingDataMap const> meshBlendingData = {},
       std::unique_ptr<TriangularMesh> visualMesh = {},
       std::unique_ptr<MeshEmbedding> visualEmbedding = {},
+      std::unique_ptr<TriangularMesh> contactSkin = {},
+      std::unique_ptr<LinearMeshEmbedding> contactSkinEmbedding = {},
       std::shared_ptr<GridSdf> gridSdf = {})
       : GridSdfShape(std::move(gridSdf)),
         _mesh(std::move(mesh)),
@@ -391,7 +406,9 @@ class TriangularMeshShape final : public GridSdfShape {
         _constrainedNodesData(std::move(constrainedNodesData)),
         _meshBlendingData(std::move(meshBlendingData)),
         _visualMesh(std::move(visualMesh)),
-        _visualEmbedding(std::move(visualEmbedding)) {}
+        _visualEmbedding(std::move(visualEmbedding)),
+        _contactSkin(std::move(contactSkin)),
+        _contactSkinEmbedding(std::move(contactSkinEmbedding)) {}
 
   AnyShape GetBoundingVolume(Error& error) const override {
     MOCHI_ERROR_RETURN(error, {});
@@ -438,6 +455,14 @@ class TriangularMeshShape final : public GridSdfShape {
     return _visualEmbedding;
   }
 
+  std::shared_ptr<TriangularMesh const> const& GetContactSkin() const {
+    return _contactSkin;
+  }
+
+  std::shared_ptr<LinearMeshEmbedding const> const& GetContactSkinEmbedding() const {
+    return _contactSkinEmbedding;
+  }
+
   ModelData GetModelData(Error& error) const override;
 
  private:
@@ -447,6 +472,8 @@ class TriangularMeshShape final : public GridSdfShape {
   std::shared_ptr<BlendingDataMap const> _meshBlendingData;
   std::shared_ptr<TriangularMesh const> _visualMesh;
   std::shared_ptr<MeshEmbedding const> _visualEmbedding;
+  std::shared_ptr<TriangularMesh const> _contactSkin;
+  std::shared_ptr<LinearMeshEmbedding const> _contactSkinEmbedding;
 };
 
 // Describes a polyline mesh (used for rod actor geometry). Can be shared by actors.
@@ -462,6 +489,8 @@ class PolylineShape final : public Shape {
       DynamicArray<Real3> elementFrameAxes,
       std::shared_ptr<TriangularMesh const> visualMesh,
       std::shared_ptr<RodSurfaceEmbeddingData const> rodVisualEmbedding,
+      std::shared_ptr<TriangularMesh const> contactSkin,
+      std::shared_ptr<RodSurfaceEmbeddingData const> rodContactSkinEmbedding,
       bool isClosedLoop);
 
   AnyShape GetBoundingVolume(Error& error) const override {
@@ -497,6 +526,18 @@ class PolylineShape final : public Shape {
     return _rodVisualEmbedding;
   }
 
+  std::shared_ptr<TriangularMesh const> const& GetContactSkin() const {
+    return _contactSkin;
+  }
+
+  std::shared_ptr<RodSurfaceEmbeddingData const> const& GetRodContactSkinEmbedding() const {
+    return _rodContactSkinEmbedding;
+  }
+
+  std::shared_ptr<TriangularMesh const> const& GetSurfaceMesh() const override {
+    return _contactSkin;
+  }
+
   /// Returns the polyline's flat connectivity array. For an open polyline this is
   /// 2*(numNodes-1) entries [0,1, 1,2, ..., numNodes-2, numNodes-1]; for a closed-loop
   /// polyline a final wrap-around segment [numNodes-1, 0] is appended.
@@ -513,6 +554,8 @@ class PolylineShape final : public Shape {
   DynamicArray<int> _connectivity;
   std::shared_ptr<TriangularMesh const> _visualMesh;
   std::shared_ptr<RodSurfaceEmbeddingData const> _rodVisualEmbedding;
+  std::shared_ptr<TriangularMesh const> _contactSkin;
+  std::shared_ptr<RodSurfaceEmbeddingData const> _rodContactSkinEmbedding;
 };
 
 // Define data structure for bones

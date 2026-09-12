@@ -27,6 +27,7 @@
 #include "mochi_constraint_interface.h"
 #include "mochi_contact.h"
 #include "mochi_contact_filter.h"
+#include "mochi_contact_pair_params.h"
 #include "mochi_context.h"
 #include "mochi_debug_draw.h"
 #include "mochi_differentiable.h"
@@ -43,6 +44,7 @@
 #include "mochi_simulation.h"
 #include "mochi_soft.h"
 #include "mochi_soft_init.h"
+#include "mochi_soft_rom_components.h"
 #include "mochi_soft_rom_init.h"
 #include "mochi_soft_skinned.h"
 #include "mochi_step.h"
@@ -164,6 +166,7 @@ DestroyAllItemsInArticulatedActor(SceneImpl& scene, entt::registry& registry, en
 
   // Destroy constraints in the articulation.
   for (auto const& constraint : memberConstraintsCopy) {
+    registry.get<CConstraintInfo>(constraint).isActorOwned = false;
     scene.DestroyConstraint(GetConstraintHandle(constraint, scene.GetHandle()));
   }
 
@@ -184,6 +187,7 @@ static void DestroyActorEntity(SceneImpl& scene, entt::registry& registry, entt:
   if (auto* constraintMemberInfo = registry.try_get<CConstraintMemberInfo>(e)) {
     auto constraintsCopy = constraintMemberInfo->constraints;
     for (entt::entity c : constraintsCopy) {
+      registry.get<CConstraintInfo>(c).isActorOwned = false;
       scene.DestroyConstraint(GetConstraintHandle(c, scene.GetHandle()));
     }
   }
@@ -199,9 +203,9 @@ static void DestroyActorEntity(SceneImpl& scene, entt::registry& registry, entt:
     DestroyAllItemsInArticulatedActor(scene, registry, e);
   }
 
-  // Clean actor-vs-actor contact table
-  auto& contactTable = registry.ctx<CContactFilterTable>();
-  contactTable.RemoveEntity(e);
+  // Clean actor-vs-actor contact tables.
+  registry.ctx<CContactFilterTable>().RemoveEntity(e);
+  registry.ctx<CContactPairParamsOverrideTable>().RemoveEntity(e);
 
   // Remove actor from its island (if any)
   island::RemoveActor(registry, e);
@@ -218,9 +222,9 @@ template <typename EnumT>
 
 static void CheckStateCaptureSupported(entt::registry const& reg, Error& error) {
   MOCHI_ERROR_IF(
-      !reg.storage<TagRomActor>().empty(),
+      !reg.storage<TagRomActor>().empty() || !reg.storage<CRomFomSwitchingParams>().empty(),
       error,
-      "State capture is not supported for scenes with ROM actors.");
+      "State capture is not supported for scenes with ROM actors or ROM/FOM switching.");
 }
 
 [[nodiscard]] static bool ActorCanOwnNestedActors(Actor const& actor) {
@@ -438,6 +442,10 @@ SceneImpl::~SceneImpl() {
 
   // Destroy all remaining entities and components
   _registry.clear();
+}
+
+bool SceneImpl::TryClaimOwnership() {
+  return !_ownershipClaimed.exchange(true, std::memory_order_relaxed);
 }
 
 char const* SceneImpl::GetName() const {
@@ -878,10 +886,7 @@ bool SceneImpl::IsEqualState(StateHandle a, StateHandle b) const {
 void SceneImpl::CaptureStateToFile(std::string_view filePath, Error& error) {
   MOCHI_ERROR_RETURN(error);
   MOCHI_ERROR_IF(filePath.empty(), error, "Empty file path");
-  MOCHI_ERROR_IF(
-      !_registry.storage<TagRomActor>().empty(),
-      error,
-      "CaptureStateToFile is not supported for scenes with ROM actors.");
+  CheckStateCaptureSupported(_registry, error);
   MOCHI_ERROR_RETURN(error);
   std::string json = capture::CaptureStateToJson(_registry, /*prettyMultiLine*/ true, error);
   WriteFile(filePath, json, error);
@@ -1084,6 +1089,64 @@ void SceneImpl::EnableActorContactSymmetric(
     return;
   }
   EnableActorContactAsymmetric(actorB, actorA, enable, includeNestedActors, error);
+}
+
+void SceneImpl::SetContactPairParamsOverride(
+    ActorHandle actorA,
+    ActorHandle actorB,
+    ContactPairParamsOverride const& paramsOverride,
+    Error& error) {
+  MOCHI_ERROR_RETURN(error);
+  ValidateContactPairParamsOverride(paramsOverride, error);
+  MOCHI_ERROR_RETURN(error);
+
+  entt::entity const entityA = GetEntity(_registry, actorA, error);
+  entt::entity const entityB = GetEntity(_registry, actorB, error);
+  MOCHI_ERROR_RETURN(error);
+  MOCHI_ERROR_IF_NOT(
+      _registry.all_of<CContactParams>(entityA) && _registry.all_of<CContactParams>(entityB),
+      error,
+      "Both actors must have contact parameters.");
+  MOCHI_ERROR_RETURN(error);
+
+  _registry.ctx<CContactPairParamsOverrideTable>().Set(entityA, entityB, paramsOverride);
+}
+
+void SceneImpl::ClearContactPairParamsOverride(
+    ActorHandle actorA,
+    ActorHandle actorB,
+    Error& error) {
+  MOCHI_ERROR_RETURN(error);
+  entt::entity const entityA = GetEntity(_registry, actorA, error);
+  entt::entity const entityB = GetEntity(_registry, actorB, error);
+  MOCHI_ERROR_RETURN(error);
+
+  _registry.ctx<CContactPairParamsOverrideTable>().Clear(entityA, entityB);
+}
+
+bool SceneImpl::HasContactPairParamsOverride(ActorHandle actorA, ActorHandle actorB, Error& error)
+    const {
+  MOCHI_ERROR_RETURN(error, false);
+  entt::entity const entityA = GetEntity(_registry, actorA, error);
+  entt::entity const entityB = GetEntity(_registry, actorB, error);
+  MOCHI_ERROR_RETURN(error, false);
+  return _registry.ctx<CContactPairParamsOverrideTable const>().Find(entityA, entityB) != nullptr;
+}
+
+ContactPairParamsOverride SceneImpl::GetContactPairParamsOverride(
+    ActorHandle actorA,
+    ActorHandle actorB,
+    Error& error) const {
+  MOCHI_ERROR_RETURN(error, {});
+  entt::entity const entityA = GetEntity(_registry, actorA, error);
+  entt::entity const entityB = GetEntity(_registry, actorB, error);
+  MOCHI_ERROR_RETURN(error, {});
+
+  auto const* paramsOverride =
+      _registry.ctx<CContactPairParamsOverrideTable const>().Find(entityA, entityB);
+  MOCHI_ERROR_IF(paramsOverride == nullptr, error, "Contact pair has no parameter override.");
+  MOCHI_ERROR_RETURN(error, {});
+  return *paramsOverride;
 }
 
 void SceneImpl::RestoreStatePair(StateHandle curr, StateHandle prev, Error& err) {
@@ -1589,7 +1652,7 @@ Actor* SceneImpl::CreateSoftActor(SoftActorParams const& params, Error& error) {
 }
 
 // Experimental API
-MOCHI_API Actor* mochi::experimental::CreateSoftActor(
+Actor* mochi::experimental::CreateSoftActor(
     Scene* scene,
     SoftActorParams const& params,
     ExperimentalSoftActorParams const& experimentalParams,
@@ -1776,7 +1839,7 @@ static void ValidateAndAutoCorrect(SoftSkinnedActorParams& params, Error& error)
 }
 
 // Experimental API
-MOCHI_API Actor* mochi::experimental::CreateSoftSkinnedActor(
+Actor* mochi::experimental::CreateSoftSkinnedActor(
     Scene* scene,
     SoftSkinnedActorParams const& params,
     experimental::ExperimentalSoftSkinnedActorParams const& experimentalParams,
@@ -1803,8 +1866,7 @@ MOCHI_API Actor* mochi::experimental::CreateSoftSkinnedActor(
 }
 
 // Experimental API
-MOCHI_API Actor*
-experimental::CreateShellActor(Scene* scene, ShellActorParams const& params, Error& error) {
+Actor* experimental::CreateShellActor(Scene* scene, ShellActorParams const& params, Error& error) {
   MOCHI_PROFILE_SCOPE();
   MOCHI_ERROR_IF(!scene, error, "Invalid scene");
   MOCHI_ERROR_RETURN(error, {});
@@ -1824,8 +1886,7 @@ Actor* SceneImpl::CreateSoftSkinnedActor(SoftSkinnedActorParams const& params, E
   return experimental::CreateSoftSkinnedActor(this, params, {}, error);
 }
 
-MOCHI_API Actor*
-experimental::CreateRodActor(Scene* scene, RodActorParams const& params, Error& error) {
+Actor* experimental::CreateRodActor(Scene* scene, RodActorParams const& params, Error& error) {
   MOCHI_PROFILE_SCOPE();
   MOCHI_ERROR_IF(!scene, error, "Invalid scene");
   MOCHI_ERROR_RETURN(error, {});
@@ -2105,8 +2166,11 @@ void SceneImpl::CreateArticulatedActorJointLimitsImpl(
         dofRangeParams.damping = params.joints[i].limitDamping;
 
         // Create constraint
-        constraints.emplace_back(
-            CreateArticulated3dRotationRangeConstraint(dofRangeParams, ErrorAssert{}));
+        auto* constraint =
+            CreateArticulated3dRotationRangeConstraint(dofRangeParams, ErrorAssert{});
+        _registry.get<CConstraintInfo>(GetEntityUnchecked(constraint->GetHandle())).isActorOwned =
+            true;
+        constraints.emplace_back(constraint);
       } break;
 
       case ArticulatedJointType::Prismatic: // Fallthrough
@@ -2145,8 +2209,10 @@ void SceneImpl::CreateArticulatedActorJointLimitsImpl(
         dofRangeParams.damping = params.joints[i].limitDamping;
 
         // Create constraint
-        constraints.emplace_back(
-            CreateArticulatedSingleDofRangeConstraint(dofRangeParams, ErrorAssert{}));
+        auto* constraint = CreateArticulatedSingleDofRangeConstraint(dofRangeParams, ErrorAssert{});
+        _registry.get<CConstraintInfo>(GetEntityUnchecked(constraint->GetHandle())).isActorOwned =
+            true;
+        constraints.emplace_back(constraint);
       } break;
 
       case ArticulatedJointType::Cycle: // Fallthrough
@@ -2197,6 +2263,8 @@ void SceneImpl::CreateArticulatedActorCycleJointsImpl(
       jointParams.stiffness = params.cycles[i - numLinks].stiffness;
       auto* newConstraint = CreateRigidSphericalJointConstraint(jointParams, error);
       MOCHI_ERROR_RETURN(error);
+      _registry.get<CConstraintInfo>(GetEntityUnchecked(newConstraint->GetHandle())).isActorOwned =
+          true;
       constraints.push_back(newConstraint->GetHandle());
     }
   }
@@ -2407,6 +2475,8 @@ static std::shared_ptr<TetrahedralMeshShape const> CreateDuplicateShapeWithSkinn
       srcShape->GetMeshBlending(),
       srcShape->GetVisualMesh(),
       srcShape->GetVisualEmbedding(),
+      srcShape->GetContactSkin(),
+      srcShape->GetContactSkinEmbedding(),
       srcShape->GetGridSdf(),
       srcShape->GetRomData(), // Deep copy
       srcShape->GetSampleMeshes(), // Deep copy
@@ -2908,9 +2978,15 @@ void SceneImpl::DestroyConstraint(ConstraintHandle constraint) {
     return;
   }
 
+  auto& constraintInfo = _registry.get<CConstraintInfo>(constraintEntity);
+  if (constraintInfo.isActorOwned) {
+    MOCHI_LOG_WARNING(
+        "Constraints created automatically while creating or configuring an actor cannot be destroyed individually. Remove the corresponding actor feature, if supported, or destroy the actor.");
+    return;
+  }
+
   // Update CConstraintMemberInfo on each affected actor, so that they no longer point
   // back to this constraint entity.
-  auto& constraintInfo = _registry.get<CConstraintInfo>(constraintEntity);
   std::unordered_set<entt::entity> processedActors;
   for (entt::entity actor : constraintInfo.actors) {
     if (!processedActors.insert(actor).second) {
@@ -3129,7 +3205,7 @@ std::shared_ptr<dbg::SceneDebugger> SceneImpl::GetDebugger() const {
   return _debugger.Read(&DebuggerInfo::debugger);
 }
 
-MOCHI_API void experimental::ApplyImprovedConvergenceSettings(Scene* scene, Error& error) {
+void experimental::ApplyImprovedConvergenceSettings(Scene* scene, Error& error) {
   MOCHI_ERROR_IF(!scene, error, "Invalid scene");
   MOCHI_ERROR_RETURN(error);
   auto* sceneImpl = assert_cast<SceneImpl*>(scene);
@@ -3205,7 +3281,7 @@ void MakeSceneDifferentiableInternal(Scene* scene, Error& error) {
   reg.set<CStatePair>();
 }
 
-MOCHI_API void diffsim::MakeSceneDifferentiable(Scene* scene, Error& error) {
+void diffsim::MakeSceneDifferentiable(Scene* scene, Error& error) {
   MakeSceneDifferentiableInternal(scene, error);
 }
 
@@ -3236,7 +3312,7 @@ void experimental::RestoreStateFromScene(
   MOCHI_ERROR_RETURN(error, __VA_ARGS__);
 
 // [Differentiability] Get solver parameters.
-MOCHI_API diffsim::BackPropagationSolverParams diffsim::GetBackPropagationSolverParams(
+diffsim::BackPropagationSolverParams diffsim::GetBackPropagationSolverParams(
     Scene const* scene,
     Error& error) {
   MOCHI_RETURN_IF_NOT_DIFFERENTIABLE(const, {});
@@ -3244,7 +3320,7 @@ MOCHI_API diffsim::BackPropagationSolverParams diffsim::GetBackPropagationSolver
 }
 
 // [Differentiability] Set solver parameters.
-MOCHI_API void diffsim::SetBackPropagationSolverParams(
+void diffsim::SetBackPropagationSolverParams(
     Scene* scene,
     BackPropagationSolverParams const& params,
     Error& error) {
@@ -3253,7 +3329,7 @@ MOCHI_API void diffsim::SetBackPropagationSolverParams(
 }
 
 // [Differentiability] Get the performance metrics of the last back-propagation step.
-[[nodiscard]] MOCHI_API diffsim::BackPropagationSceneStats diffsim::GetBackPropagationSceneStats(
+[[nodiscard]] diffsim::BackPropagationSceneStats diffsim::GetBackPropagationSceneStats(
     Scene const* scene,
     Error& error) {
   MOCHI_RETURN_IF_NOT_DIFFERENTIABLE(const, {});
@@ -3261,12 +3337,12 @@ MOCHI_API void diffsim::SetBackPropagationSolverParams(
 }
 
 // [Differentiability] Reset accumulated gradient containers used during backpropagation.
-MOCHI_API void diffsim::ResetBackPropagation(Scene* scene, Error& error) {
+void diffsim::ResetBackPropagation(Scene* scene, Error& error) {
   MOCHI_RETURN_IF_NOT_DIFFERENTIABLE(, );
   sceneImpl->ResetBackPropagation();
 }
 
-MOCHI_API void diffsim::PrepareBackPropagate(
+void diffsim::PrepareBackPropagate(
     Scene* scene,
     StateHandle stateNew,
     StateHandle stateOld,
@@ -3275,12 +3351,12 @@ MOCHI_API void diffsim::PrepareBackPropagate(
   sceneImpl->PrepareBackPropagate(stateNew, stateOld, error);
 }
 
-MOCHI_API void diffsim::BackPropagate(Scene* scene, Error& error) {
+void diffsim::BackPropagate(Scene* scene, Error& error) {
   MOCHI_RETURN_IF_NOT_DIFFERENTIABLE(, );
   sceneImpl->BackPropagate(error);
 }
 
-MOCHI_API void diffsim::GetStepJacobian(
+void diffsim::GetStepJacobian(
     Scene* scene,
     StateHandle stateNew,
     StateHandle stateCurr,
@@ -3294,7 +3370,7 @@ MOCHI_API void diffsim::GetStepJacobian(
 
 #undef MOCHI_RETURN_IF_NOT_DIFFERENTIABLE
 
-MOCHI_API experimental::DebugStats experimental::GetDebugStats(Scene const* scene, Error& error) {
+experimental::DebugStats experimental::GetDebugStats(Scene const* scene, Error& error) {
   MOCHI_ERROR_IF(scene == nullptr, error, "Invalid scene pointer");
   MOCHI_ERROR_RETURN(error, {});
   return assert_cast<SceneImpl const*>(scene)->GetDebugStats();

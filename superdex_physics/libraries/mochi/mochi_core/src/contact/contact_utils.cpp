@@ -860,7 +860,7 @@ void mochi::ContactJac::CompressIndices() {
   }
 
   // Create final storage. Use the maximum group count across all contacts, since different
-  // contacts may have different numbers of index groups (e.g., rod visual mesh contact where
+  // contacts may have different numbers of index groups (e.g., rod surface contact where
   // skinning connectivity varies per contact). Per-contact group counts are stored so that
   // IndGroups(i) returns only the valid entries for each contact.
   int maxGroups = 0;
